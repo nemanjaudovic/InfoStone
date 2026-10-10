@@ -1,7 +1,5 @@
-import os
 import json
-
-requests = __import__('requests')
+import requests
 
 BASE_URL = "http://127.0.0.1:8000"
 
@@ -30,7 +28,6 @@ def test_customize_css_api():
 def test_screen_candidates_batch_api():
     print("Testing /api/screen-candidates-batch endpoint...")
 
-    # MongoDB-style batch payload matching what your frontend will send
     candidates_payload = [
         {
             "_id": "64a7f1b2c3d4e5f6a7b8c9d0",
@@ -43,19 +40,22 @@ def test_screen_candidates_batch_api():
                 "gpa": 9.4
             },
             "files": [
-                {"field": "cv", "filename": "NemanjaUdovicCV_AMD copy.pdf", "path": "/uploads/marko_markovic_cv.pdf",
-                 "size": 204800}
+                {
+                    "field": "cv",
+                    "filename": "NemanjaUdovicCV_AMD copy.pdf",
+                    "path": "/uploads/NemanjaUdovicCV_AMD copy.pdf",
+                    "size": 204800
+                }
             ]
         }
     ]
 
     criteria = "Filter candidates with a GPA above 9.0 who have strong Python experience."
 
-    # Send as form data with JSON stringified candidates
     form_data = {
         "candidates_json": json.dumps(candidates_payload),
         "criteria": criteria,
-        "files_directory": "./sample_cvs"
+        "files_directory": "ai/test/sample_cvs"
     }
 
     response = requests.post(f"{BASE_URL}/api/screen-candidates-batch", data=form_data)
