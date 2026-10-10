@@ -1,11 +1,13 @@
 import { Component, inject } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
+import { AuthService } from '../../core/services/auth.service';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, RouterLink],
   template: `
     <div class="login-screen">
       <form class="login-card" (ngSubmit)="logIn()">
@@ -13,7 +15,7 @@ import { Router } from '@angular/router';
         <p class="subtitle">Sign in to your workspace</p>
 
         <label class="field">
-          <span>Username</span>
+          <span>Username or email</span>
           <input name="username" [(ngModel)]="username" placeholder="gdg" autocomplete="username" />
         </label>
 
@@ -22,7 +24,11 @@ import { Router } from '@angular/router';
           <input name="password" type="password" [(ngModel)]="password" placeholder="••••••••" autocomplete="current-password" />
         </label>
 
-        <button type="submit" class="login-btn">Log In</button>
+        @if (error) {
+          <p class="error">{{ error }}</p>
+        }
+        <button type="submit" class="login-btn" [disabled]="loading">{{ loading ? 'Signing in…' : 'Log In' }}</button>
+        <p class="switch">No account? <a routerLink="/register">Create one</a></p>
       </form>
     </div>
   `,
@@ -63,16 +69,34 @@ import { Router } from '@angular/router';
         font-weight: 600;
       }
       .login-btn:hover { background: var(--accent); }
+      .login-btn:disabled { opacity: 0.6; cursor: default; }
+      .error { margin: 0; color: #ff9e9e; font-size: 13px; }
+      .switch { margin: 0; font-size: 13px; color: var(--text-muted); text-align: center; }
     `,
   ],
 })
 export class LoginComponent {
   private router = inject(Router);
+  private auth = inject(AuthService);
   username = '';
   password = '';
+  loading = false;
+  error: string | null = null;
 
   logIn(): void {
-    // Nema prave autentifikacije jos: uvek se ulazi na welcome.
-    this.router.navigateByUrl('/welcome');
+    if (!this.username.trim() || !this.password) {
+      this.error = 'Enter username and password.';
+      return;
+    }
+    this.loading = true;
+    this.error = null;
+    // POST /api/auth/login -> token se cuva u AuthService (localStorage)
+    this.auth.login(this.username.trim(), this.password).subscribe({
+      next: () => this.router.navigateByUrl('/welcome'),
+      error: (err: HttpErrorResponse) => {
+        this.error = err.error?.error || 'Login failed. Is the backend running?';
+        this.loading = false;
+      },
+    });
   }
 }

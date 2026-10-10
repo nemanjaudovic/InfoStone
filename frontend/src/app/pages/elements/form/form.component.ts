@@ -1,7 +1,24 @@
-import { Component, HostListener } from '@angular/core';
+import { Component, HostListener, inject } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import { firstValueFrom } from 'rxjs';
+import { ComponentsService } from '../../../core/services/components.service';
+import { CssService } from '../../../core/services/css.service';
+import { FormField } from '../../../core/models/component.model';
 
 type FieldType = 'text' | 'textarea' | 'checkbox' | 'radio' | 'file';
+
+// Rezultat "Generate": forma sacuvana na backend-u + embed podaci
+interface GenerateResult {
+  id: string;
+  embedUrl: string;
+  embedCode: string;
+  mockSiteUrl: string;
+  previewUrl: SafeResourceUrl;
+  styled: boolean;
+  notes: string;
+}
 
 interface Question {
   id: number;
@@ -17,6 +34,8 @@ interface Question {
   imports: [FormsModule],
   template: `
     <div class="builder">
+      <input class="form-title" [(ngModel)]="formTitle" placeholder="Form title (e.g. Hackathon application)" />
+
       @for (q of questions; track q.id; let last = $last) {
         <div class="question">
           <div class="cell">
@@ -128,8 +147,11 @@ interface Question {
         <p>Drop your .css files here</p>
         @if (cssFiles.length) {
           <ul class="file-list">
-            @for (f of cssFiles; track f) {
-              <li>{{ f }}</li>
+            @for (f of cssFiles; track $index) {
+              <li>
+                {{ f.name }}
+                <button type="button" class="remove-file" (click)="removeFile($index, $event)" title="Remove">×</button>
+              </li>
             }
           </ul>
         }
@@ -138,7 +160,34 @@ interface Question {
       @if (generateError) {
         <p class="generate-error">{{ generateError }}</p>
       }
-      <button type="button" class="generate" (click)="generate()">Generate</button>
+      <button type="button" class="generate" (click)="generate()" [disabled]="generating">
+        {{ generating ? generatingStep : 'Generate' }}
+      </button>
+
+      @if (result) {
+        <section class="result">
+          <div class="result-head">
+            <h2>Form is live</h2>
+            <span class="badge">{{ result.styled ? 'Styled with your CSS' : 'Default style' }}</span>
+          </div>
+          <p class="muted">ID: <code>{{ result.id }}</code></p>
+
+          <label class="muted" for="embed-code">Embed code — paste it into your site</label>
+          <div class="code-row">
+            <textarea id="embed-code" class="code" readonly rows="2" [value]="result.embedCode"></textarea>
+            <button type="button" class="copy" (click)="copyEmbed()">{{ copied ? 'Copied' : 'Copy' }}</button>
+          </div>
+
+          <div class="links">
+            <a [href]="result.mockSiteUrl" target="_blank" rel="noopener">Open on mock site A ↗</a>
+            <a [href]="result.embedUrl" target="_blank" rel="noopener">Open iframe alone ↗</a>
+          </div>
+
+          <div class="preview">
+            <iframe [src]="result.previewUrl" [style.height.px]="previewHeight" title="Form preview"></iframe>
+          </div>
+        </section>
+      }
     </div>
   `,
   styles: [
@@ -348,6 +397,56 @@ interface Question {
         width: 100%;
       }
       .generate:hover { background: var(--accent); }
+      .generate:disabled { opacity: 0.6; cursor: default; }
+
+      .form-title {
+        background: none;
+        border: 0;
+        border-bottom: 1px solid var(--border);
+        color: var(--text);
+        font-size: 22px;
+        font-weight: 700;
+        padding: 6px 0 10px;
+        margin-bottom: 14px;
+      }
+      .form-title:focus { border-bottom-color: var(--accent); outline: none; }
+
+      .file-list li { display: flex; align-items: center; justify-content: center; gap: 6px; }
+      .remove-file { background: none; border: 0; color: var(--text-muted); font-size: 16px; line-height: 1; padding: 0 4px; }
+      .remove-file:hover { color: #ff9e9e; }
+
+      .result {
+        margin: 20px 0 40px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .result-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .result-head h2 { margin: 0; font-size: 18px; }
+      .badge { font-size: 12px; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 2px 10px; }
+      .muted { margin: 0; color: var(--text-muted); font-size: 13px; }
+      .muted code { color: var(--text); }
+      .code-row { display: flex; gap: 8px; }
+      .code {
+        flex: 1;
+        resize: none;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        color: var(--text);
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 12px;
+        padding: 8px 10px;
+      }
+      .copy { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 5px; padding: 0 14px; }
+      .copy:hover { border-color: var(--accent); }
+      .links { display: flex; gap: 16px; font-size: 13px; }
+      .preview { background: #fff; border-radius: 6px; overflow: hidden; }
+      .preview iframe { width: 100%; border: 0; display: block; }
       .generate-error {
         margin: 12px 0 0;
         color: #ff9e9e;
@@ -358,6 +457,10 @@ interface Question {
   ],
 })
 export class FormComponent {
+  private componentsApi = inject(ComponentsService);
+  private cssApi = inject(CssService);
+  private sanitizer = inject(DomSanitizer);
+
   // BITNO: nextId mora biti deklarisan PRE questions, jer questions poziva
   // newQuestion() u svom inicijalizatoru (inace id postaje NaN i prva celija
   // se ne moze menjati, a + ubacuje novu celiju na vrh).
@@ -368,8 +471,15 @@ export class FormComponent {
   menuMode: 'edit' | 'add' = 'edit';
   menuPos = { top: 0, right: 0 };
   dragging = false;
-  cssFiles: string[] = [];
+  cssFiles: File[] = [];
   generateError: string | null = null;
+
+  formTitle = '';
+  generating = false;
+  generatingStep = '';
+  result: GenerateResult | null = null;
+  previewHeight = 420;
+  copied = false;
 
   readonly typeOptions: { value: FieldType; label: string }[] = [
     { value: 'text', label: 'Input Text' },
@@ -465,7 +575,13 @@ export class FormComponent {
 
   private addFiles(list: FileList | null | undefined): void {
     if (!list) return;
-    this.cssFiles.push(...Array.from(list).map((f) => f.name));
+    // Cuvaju se sami fajlovi (ne samo imena) jer se salju backend-u
+    this.cssFiles.push(...Array.from(list).filter((f) => f.name.toLowerCase().endsWith('.css')));
+  }
+
+  removeFile(index: number, e: Event): void {
+    e.stopPropagation(); // da klik ne otvori file picker
+    this.cssFiles.splice(index, 1);
   }
 
   generate(): void {
@@ -478,9 +594,96 @@ export class FormComponent {
           : `${missing.length} questions have no title — fill them in before generating.`;
       return;
     }
+    const noOptions = this.questions.find(
+      (q) => (q.type === 'checkbox' || q.type === 'radio') && !q.options.some((o) => o.trim()),
+    );
+    if (noOptions) {
+      this.generateError = `"${noOptions.title}" needs at least one option.`;
+      return;
+    }
     this.generateError = null;
-    // TODO: kasnije salje pitanja + css fajlove ka backend-u / Gemma servisu.
-    console.log('Generate clicked', { questions: this.questions, cssFiles: this.cssFiles });
+    void this.saveAndStyle();
+  }
+
+  // Pitanja iz builder-a -> polja koja ocekuje backend (docs/api-contract.md):
+  // { name, label, type, required, options }. name mora biti jedinstven i bez razmaka.
+  private toFields(): FormField[] {
+    return this.questions.map((q, i) => {
+      const field: FormField = { name: `q${i + 1}`, label: q.title.trim(), type: q.type, required: q.required };
+      if (q.type === 'checkbox' || q.type === 'radio') {
+        field.options = [...new Set(q.options.map((o) => o.trim()).filter(Boolean))];
+      }
+      return field;
+    });
+  }
+
+  // Vise CSS fajlova se spaja u jedan (backend prima jedan CSS po komponenti)
+  private combinedCss(): File | null {
+    if (this.cssFiles.length === 0) return null;
+    if (this.cssFiles.length === 1) return this.cssFiles[0];
+    const parts: BlobPart[] = [];
+    this.cssFiles.forEach((f) => parts.push(`\n/* ${f.name} */\n`, f));
+    return new File(parts, 'combined.css', { type: 'text/css' });
+  }
+
+  // 1. POST /api/components  2. (ako ima CSS) POST /api/css/upload + /api/css/apply (Gemma spoj)
+  private async saveAndStyle(): Promise<void> {
+    this.generating = true;
+    this.result = null;
+    this.copied = false;
+    try {
+      this.generatingStep = 'Saving form…';
+      const created = await firstValueFrom(
+        this.componentsApi.create({
+          type: 'form',
+          title: this.formTitle.trim() || 'Untitled form',
+          schema: { fields: this.toFields() },
+          sensitive: false,
+          promptEnabled: false,
+        }),
+      );
+      const id = created.component._id;
+
+      let styled = false;
+      let notes = '';
+      const css = this.combinedCss();
+      if (css) {
+        this.generatingStep = 'Applying your CSS with Gemma…';
+        const uploaded = await firstValueFrom(this.cssApi.upload(css));
+        const applied = await firstValueFrom(this.cssApi.apply(id, uploaded.cssSourceId));
+        styled = true;
+        notes = applied.notes || '';
+      }
+
+      const embedUrl = this.componentsApi.embedUrl(id);
+      this.result = {
+        id,
+        embedUrl,
+        embedCode: `<iframe src="${embedUrl}" style="width:100%;border:0;" title="${this.formTitle.trim() || 'Form'}"></iframe>`,
+        mockSiteUrl: `http://localhost:4201/prijava?id=${id}`,
+        previewUrl: this.sanitizer.bypassSecurityTrustResourceUrl(embedUrl),
+        styled,
+        notes,
+      };
+    } catch (err) {
+      const e = err as HttpErrorResponse;
+      this.generateError = e.error?.error || e.message || 'Something went wrong.';
+    } finally {
+      this.generating = false;
+    }
+  }
+
+  copyEmbed(): void {
+    if (!this.result) return;
+    navigator.clipboard.writeText(this.result.embedCode).then(() => (this.copied = true));
+  }
+
+  // Auto-height preview iframe-a (iframe salje { infostone, height } preko postMessage)
+  @HostListener('window:message', ['$event'])
+  onEmbedMessage(e: MessageEvent): void {
+    if (e.origin === 'http://localhost:3000' && e.data?.infostone && typeof e.data.height === 'number') {
+      this.previewHeight = e.data.height;
+    }
   }
 
   onTitleChange(): void {

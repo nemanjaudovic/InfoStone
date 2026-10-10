@@ -1,12 +1,15 @@
-// Rute aplikacije: landing (login) + welcome shell sa bocnim menijem.
-// Nema auth guard-a dok se ne implementiraju korisnici — login uvek vodi na /welcome.
+// Rute aplikacije: login/registracija + welcome shell sa bocnim menijem.
+// /welcome je dostupan samo ulogovanima (JWT iz /api/auth, cuva ga AuthService).
 import { Routes } from '@angular/router';
+import { authGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'login' },
   { path: 'login', loadComponent: () => import('./pages/login/login.component').then((m) => m.LoginComponent) },
+  { path: 'register', loadComponent: () => import('./pages/register/register.component').then((m) => m.RegisterComponent) },
   {
     path: 'welcome',
+    canActivate: [authGuard],
     loadComponent: () => import('./pages/welcome/welcome.component').then((m) => m.WelcomeComponent),
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'overview' },
