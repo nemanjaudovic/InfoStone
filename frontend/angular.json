@@ -31,13 +31,19 @@
             ],
             "tsConfig": "tsconfig.app.json",
             "styles": [
+              "node_modules/@fontsource-variable/manrope/index.css",
               "src/styles.css"
             ],
             "scripts": []
           },
           "configurations": {
             "production": {
-              "outputHashing": "all"
+              "outputHashing": "all",
+              "optimization": {
+                "fonts": {
+                  "inline": false
+                }
+              }
             },
             "development": {
               "optimization": false,
