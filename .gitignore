@@ -1,9 +1,14 @@
 # Dependencies
 node_modules/
+
+# Python bytecode & cache
 __pycache__/
-*.pyc
-.venv/
+*.py[cod]
+*$py.class
+
+# Virtual environment
 venv/
+.venv/
 
 # Build output
 dist/
@@ -17,6 +22,10 @@ out-tsc/
 # Runtime data (uploadovani fajlovi)
 uploads/*
 !uploads/.gitkeep
+temp_uploads/
+
+# Local test files & sample data (AI)
+ai/test/sample_cvs/
 
 # OS / editor
 .DS_Store
