@@ -1,0 +1,6 @@
+# Svi tekstualni fajlovi u repou imaju LF kraj reda (sprecava lazne konflikte Windows CRLF vs LF)
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary
+*.docx binary

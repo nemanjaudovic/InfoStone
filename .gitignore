@@ -1,15 +1,35 @@
+# Dependencies
+node_modules/
+
 # Python bytecode & cache
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Environment variables & secrets
-.env
-
-# Local test files & sample data uploads
-ai/test/sample_cvs/
-temp_uploads/
-
 # Virtual environment
 venv/
 .venv/
+
+# Build output
+dist/
+.angular/
+out-tsc/
+
+# Env / secrets
+.env
+*.env.local
+
+# Runtime data (uploadovani fajlovi)
+uploads/*
+!uploads/.gitkeep
+temp_uploads/
+
+# Local test files & sample data (AI)
+ai/test/sample_cvs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

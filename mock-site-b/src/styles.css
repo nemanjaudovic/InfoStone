@@ -1,0 +1,3 @@
+/* Stil sajta organizacije. Ovaj CSS se u demou uploaduje u InfoStone (Gemma ga mapira na iframe). */
+body { margin: 0; font-family: system-ui, sans-serif; background: #ffffff; color: #1a1a1a; }
+a { color: #111111; }
