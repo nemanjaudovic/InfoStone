@@ -2,9 +2,11 @@ import { Component, HostListener, inject, signal } from '@angular/core';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 
 // Stranica /prijava sa ugradjenim InfoStone iframe-om (guide §9, demo korak 4)
-// U demou: nalepi ID komponente iz InfoStone dashboard-a u EMBED_ID.
-const EMBED_ID = 'demo-form';
-const EMBED_URL = `http://localhost:3000/api/components/${EMBED_ID}/embed`;
+// ID komponente iz InfoStone dashboard-a: /prijava?id=<componentId>
+// ili ga upisi u DEFAULT_EMBED_ID. Bez toga se prikazuje ugradjena demo forma.
+const DEFAULT_EMBED_ID = 'demo-form';
+const EMBED_ID = new URLSearchParams(window.location.search).get('id') || DEFAULT_EMBED_ID;
+const EMBED_URL = `http://localhost:3000/api/components/${encodeURIComponent(EMBED_ID)}/embed`;
 
 @Component({
   selector: 'app-prijava',

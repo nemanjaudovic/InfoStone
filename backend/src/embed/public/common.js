@@ -6,7 +6,12 @@ window.InfoStone = (function () {
   async function api(path, options = {}) {
     const res = await fetch(path, options);
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    if (!res.ok) {
+      const err = new Error(data.error || `HTTP ${res.status}`);
+      err.status = res.status;
+      err.data = data; // npr. data.fields = { imePolja: "poruka" } kod validacije na serveru
+      throw err;
+    }
     return data;
   }
 
