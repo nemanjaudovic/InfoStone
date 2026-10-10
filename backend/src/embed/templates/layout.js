@@ -38,7 +38,7 @@ function layout(component, { plan, markup, script, extraHead = '' }) {
   <title>${escapeHtml(component.title)}</title>
   ${extraHead}
 </head>
-<body class="infostone-${component.type}">
+<body class="infostone-embed infostone-type-${component.type}">
   ${markup}
   ${watermark}
   <style>

@@ -32,6 +32,8 @@ a tudji fajl se menja tek posle dogovora sa vlasnikom.
 5. `node_modules/`, `.env`, `uploads/*` se nikad ne commit-uju.
 
 ## Pokretanje
+Potrebno: **Node.js 18+** i **MongoDB** pokrenut lokalno (`mongodb://127.0.0.1:27017`, npr. MongoDB Community Server ili `docker run -d -p 27017:27017 mongo`).
+
 | Servis | Komanda | Port |
 |---|---|---|
 | Express | `cd backend && npm install && cp .env.example .env && npm run dev` | 3000 |
