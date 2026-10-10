@@ -1,4 +1,4 @@
-import os
+import json
 import requests
 
 BASE_URL = "http://127.0.0.1:8000"
@@ -25,27 +25,40 @@ def test_customize_css_api():
     print("-" * 40)
 
 
-def test_screen_cv_api():
-    print("Testing /api/screen-cv endpoint...")
-    sample_dir = "./sample_cvs"
+def test_screen_candidates_batch_api():
+    print("Testing /api/screen-candidates-batch endpoint...")
 
-    if not os.path.exists(sample_dir):
-        print(f"⚠️ Skipped CV test: '{sample_dir}' directory not found.")
-        return
+    candidates_payload = [
+        {
+            "_id": "64a7f1b2c3d4e5f6a7b8c9d0",
+            "submittedAt": "2026-06-01T12:00:00.000Z",
+            "data": {
+                "first_name": "Nemanja",
+                "last_name": "Udovic",
+                "university": "Univerzitet u Beogradu",
+                "faculty": "Elektrotehnički fakultet",
+                "gpa": 9.4
+            },
+            "files": [
+                {
+                    "field": "cv",
+                    "filename": "NemanjaUdovicCV_AMD copy.pdf",
+                    "path": "/uploads/NemanjaUdovicCV_AMD copy.pdf",
+                    "size": 204800
+                }
+            ]
+        }
+    ]
 
-    pdf_files = [f for f in os.listdir(sample_dir) if f.endswith(".pdf")]
-    if not pdf_files:
-        print(f"⚠️ Skipped CV test: No sample PDF found in {sample_dir}.")
-        return
+    criteria = "Filter candidates with a GPA above 9.0 who have strong Python experience."
 
-    sample_pdf_path = os.path.join(sample_dir, pdf_files[0])
-    criteria = "Must have strong Python and machine learning engineering experience."
+    form_data = {
+        "candidates_json": json.dumps(candidates_payload),
+        "criteria": criteria,
+        "files_directory": "ai/test/sample_cvs"
+    }
 
-    with open(sample_pdf_path, "rb") as f:
-        files = {"file": (pdf_files[0], f, "application/pdf")}
-        data = {"criteria": criteria}
-
-        response = requests.post(f"{BASE_URL}/api/screen-cv", files=files, data=data)
+    response = requests.post(f"{BASE_URL}/api/screen-candidates-batch", data=form_data)
 
     print(f"Status Code: {response.status_code}")
     print("Response JSON:")
@@ -58,8 +71,8 @@ if __name__ == "__main__":
     try:
         test_root()
         test_customize_css_api()
-        test_screen_cv_api()
+        test_screen_candidates_batch_api()
         print("=== ALL TESTS COMPLETED ===")
     except requests.exceptions.ConnectionError:
         print("❌ ERROR: Could not connect to FastAPI server at http://127.0.0.1:8000.")
-        print("Tip: Make sure you ran 'uvicorn ai.main:app --reload --port 8000' in another terminal.")
+        print("Tip: Make sure you ran 'python -m uvicorn ai.main:app --reload --port 8000' in another terminal.")
