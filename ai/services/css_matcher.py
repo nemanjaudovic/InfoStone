@@ -3,16 +3,17 @@ from ai.utils.gemma_client import call_kaggle_gemma
 
 CSS_MATCHER_SYSTEM_PROMPT = """
 You are an expert frontend developer and UI/UX AI assistant.
-Your task is to integrate an unstyled form <div> into an external website using ONLY CSS classes.
+Your task is to integrate an unstyled form structure into an external website based on full-page CSS.
 
 RULES:
-1. You will receive the raw HTML structure of an unstyled form <div> and a snippet of CSS from the host website.
-2. The host CSS contains class definitions (e.g., .btn, .form-input, .card) and potentially IDs.
-3. DO NOT inject or modify IDs (#id). Use ONLY class names (.class) because IDs must be globally unique.
-4. Match the host website's styling aesthetic by mapping its classes onto the corresponding tags (inputs, buttons, labels, containers) inside the form HTML.
-5. Return ONLY a valid JSON object with no markdown code blocks around it, matching this exact structure:
+1. You will receive an unstyled HTML snippet and the raw CSS from the host website's entire page.
+2. The host CSS will contain many irrelevant rules for other parts of the page. IGNORE all rules that do not apply to form elements (inputs, buttons, labels, containers, typography).
+3. Do not inject or modify IDs (#id). Use ONLY class names (.class) because IDs must be globally unique.
+4. Extract only the necessary CSS rules and place them inside a <style> block.
+5. Inject the corresponding class names into the HTML tags.
+6. Return ONLY a valid JSON object with no markdown code blocks around it, matching this exact structure:
 {
-  "styled_html": "<div class='host-container'>...</div>",
+  "styled_html": "<style>/* relevant extracted css rules */</style>\\n<form class='...'>...</form>",
   "applied_classes": ["list", "of", "classes", "used"]
 }
 """
