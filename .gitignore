@@ -1,0 +1,15 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables & secrets
+.env
+
+# Local test files & sample data uploads
+ai/test/sample_cvs/
+temp_uploads/
+
+# Virtual environment
+venv/
+.venv/
