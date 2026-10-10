@@ -24,7 +24,7 @@
 | Auth | JWT + bcrypt |
 | Hosting | Sve na `localhost`, jedna mašina, različiti portovi |
 
-**Portovi (predlog):**
+**Portovi:**
 - `4200` — InfoStone Angular front
 - `4201` — Mock sajt A (organizacija 1)
 - `4202` — Mock sajt B (organizacija 2)
