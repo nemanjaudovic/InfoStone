@@ -1,4 +1,3 @@
-```markdown
 # InfoStone — Project Specification for AI Code Agents
 
 > **Cilj dokumenta:** Ovaj fajl je namenjen AI coding alatima (Codex, Claude Code, DeepSeek Harness) da razumeju šta treba da naprave. Pročitati u celosti pre generisanja koda.
@@ -508,4 +507,3 @@ Svaki sadrži stranicu `/prijava` sa ubačenim `<iframe>`-om.
 ---
 
 **Kraj specifikacije.**
-```
