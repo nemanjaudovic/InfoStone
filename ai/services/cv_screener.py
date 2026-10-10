@@ -1,1 +1,0 @@
-# PDF parser & criteria matcher
