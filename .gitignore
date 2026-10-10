@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build output
+dist/
+.angular/
+out-tsc/
+
+# Env / secrets
+.env
+*.env.local
+
+# Runtime data (uploadovani fajlovi)
+uploads/*
+!uploads/.gitkeep
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
