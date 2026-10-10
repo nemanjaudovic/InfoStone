@@ -1,3 +1,4 @@
+```markdown
 # InfoStone — Project Specification for AI Code Agents
 
 > **Cilj dokumenta:** Ovaj fajl je namenjen AI coding alatima (Codex, Claude Code, DeepSeek Harness) da razumeju šta treba da naprave. Pročitati u celosti pre generisanja koda.
@@ -6,7 +7,7 @@
 
 ## 1. Projekat u jednoj rečenici
 
-**InfoStone** je SaaS web alat koji omogućava developerima organizacija (npr. GDG) da kroz GUI naprave embeddable komponente (forme, tabele, search, grafikone), primene CSS svog sajta na njih uz pomoć **Gemma** AI modela, i eksportuju ih kao `<iframe>` koji izgleda kao da je deo njihovog sajta — uz potpunu kontrolu nad prikupljenim podacima i AI pretragu.
+**InfoStone** je SaaS web alat koji omogućava developerima organizacija (npr. GDG) da kroz GUI naprave embeddable komponente (forme, tabele, search, grafikone), primene CSS svog sajta na njih uz pomoć **Gemma** AI modela, i eksportuju ih kao `<iframe>` koji izgleda kao da je deo njihovog sajta — uz potpunu kontrolu nad prikupljenim podacima i **AI pretragu interneta**.
 
 ---
 
@@ -19,6 +20,7 @@
 | Backend (InfoStone) | Node.js + Express |
 | AI Backend | Python + FastAPI |
 | AI Model | **Gemma** (ne Gemini) |
+| Web Search Tool | **Tavily / SerpAPI / Brave Search** (jedan od) |
 | Baza | MongoDB (lokalna instanca) |
 | File storage | Lokalni disk (hackathon) |
 | Auth | JWT + bcrypt |
@@ -29,7 +31,7 @@
 - `4201` — Mock sajt A (organizacija 1)
 - `4202` — Mock sajt B (organizacija 2)
 - `3000` — Express API
-- `8000` — FastAPI (Gemma wrapper)
+- `8000` — FastAPI (Gemma wrapper + web search)
 
 ---
 
@@ -42,6 +44,8 @@ Svaka komponenta koju developer napravi ima:
 - `index` (redni broj po tipu za tog korisnika)
 - **Svoju MongoDB kolekciju** u formatu: `{username}_{type}_{index}`  
   Primer: `gdg_form_3`, `gdg_tableview_1`, `gdg_search_2`, `gdg_graph_1`
+
+> **Napomena:** `search` komponenta **ne čuva** korisničke podatke u svojoj kolekciji — ona pretražuje **internet** preko web search tool-a. Kolekcija za `search` je opciona i služi samo za čuvanje istorije pretraga ako je potrebno.
 
 ### 3.2 Watermark
 - Free plan: iframe prikazuje tekstualni watermark **"Powered by InfoStone."** (donji desni ugao).
@@ -61,26 +65,27 @@ Prompt box je tekstualno polje unutar iframe-a koje omogućava korisniku da **pr
 | Tip komponente | Prompt Box | Šta prompt kontroliše |
 |---|---|---|
 | **Form** | ❌ **NE SME** | — |
-| **Table** | ✅ (paid only) | Koje kolone/informacije su prikazane |
-| **Graph** | ✅ (paid only) | Koje metrike i kategorije su prikazane |
-| **Search** | ✅ **OBAVEZNO** (paid only) | Šta AI pretražuje i kako rangira rezultate |
+| **Table** | ✅ (paid only) | Koje kolone/informacije su prikazane (iz **MongoDB**) |
+| **Graph** | ✅ (paid only) | Koje metrike i kategorije su prikazane (iz **MongoDB**) |
+| **Search** | ✅ **OBAVEZNO** (paid only) | **Šta AI pretražuje na INTERNETU** |
 
 **Zašto Form ne sme da ima prompt box:**
 Forma služi za prikupljanje podataka od strane posetioca. Ako bi posetilac mogao promptom da utiče na formu, to bi značilo da može da menja šta se prikuplja — što narušava integritet podataka i bezbednost. Prompt box ima smisla samo za **prikaz i pretragu** podataka, ne za unos.
 
 **Kako radi tehnički:**
 - Prompt box je deo iframe-a (unutar embed-a).
-- Kada korisnik unese prompt, iframe šalje zahtev Express-u → Express prosleđuje FastAPI-ju → Gemma interpretira prompt i vraća **filter/query/sort parametre** ili **JSON strukturu**.
-- Express izvršava upit nad MongoDB kolekcijom i vraća rezultat nazad u iframe.
+- Kada korisnik unese prompt, iframe šalje zahtev Express-u → Express prosleđuje FastAPI-ju → Gemma interpretira prompt.
+- Za **Table/Graph**: Gemma vraća filter/query/sort parametre → Express izvršava upit nad **MongoDB** kolekcijom → vraća rezultat u iframe.
+- Za **Search**: Gemma poziva **web search tool** → pretražuje **internet** → sumarizuje i rangira rezultate → vraća ih u iframe.
 - Primeri:
   - Table: *"Prikaži samo učesnike koji su iz Beograda i prijavili se posle 1. maja"* → Gemma generiše MongoDB query.
   - Graph: *"Prikaži broj prijava po danu, grupisano po tipu karte"* → Gemma generiše aggregation pipeline.
-  - Search: *"Nađi prostore za 200 ljudi u Beogradu ispod 500€"* → Gemma pretražuje bazu i rangira rezultate.
+  - Search: *"Nađi prostore za 200 ljudi u Beogradu ispod 500€"* → **Gemma pretražuje internet** i vraća listu sa linkovima.
 
 **Bezbednost prompt box-a:**
 - Gemma **ne izvršava** slobodne MongoDB upite direktno — generiše samo iz whitelist-ovanih operatora.
 - Sanitizacija prompta pre slanja Gemmi (sprečiti prompt injection).
-- Rate limiting na prompt endpoint.
+- Rate limiting na prompt endpoint (posebno za web search — max 10 pretraga/min).
 
 ---
 
@@ -112,7 +117,7 @@ Ovo je **srce proizvoda**. Svaka komponenta je embeddable kroz `<iframe>` i mož
 
 ### 4.2 Table View (Tabelarni prikaz)
 
-**Namena:** Prikaz podataka iz MongoDB kolekcije u tabeli (npr. lista prijavljenih učesnika, spisak sponzora).
+**Namena:** Prikaz podataka iz **MongoDB kolekcije** u tabeli (npr. lista prijavljenih učesnika, spisak sponzora).
 
 **Izvor podataka:**
 - Podaci iz forme (`{username}_form_{index}`)
@@ -135,46 +140,44 @@ Ovo je **srce proizvoda**. Svaka komponenta je embeddable kroz `<iframe>` i mož
 
 ---
 
-### 4.3 Search (Pretraga) — **NAJVAŽNIJA KOMPONENTA**
+### 4.3 Search (Pretraga interneta) — **NAJVAŽNIJA KOMPONENTA**
 
-**Namena:** AI-pokretana pretraga strukturiranih podataka u bazi InfoStone-a. Ovo je **glavni diferencijator** proizvoda — nije obična pretraga, nije Google, već pretraga nad **kuriranom bazom** koju su popunili drugi organizatori i sponzori.
+**Namena:** AI-pokretana pretraga **INTERNETA** u realnom vremenu. Korisnik pita prirodnim jezikom, Gemma pretražuje web preko web search tool-a i vraća sažete, rangirane rezultate.
+
+**Ovo NIJE pretraga interne baze.** Search uvek ide na internet.
 
 **Primeri upotrebe:**
-- Organizator traži: *"Prostor u Beogradu za 200 ljudi, do 500€, dozvoljen alkohol, parking"* → AI pretražuje bazu prostora.
-- Organizator traži: *"Sponzori iz IT industrije koji su ranije sponzorisali tech evente u Srbiji"* → AI pretražuje bazu sponzora.
-- Učesnik traži: *"Predavanja o AI-ju na konferenciji"* → AI pretražuje sesije.
+- Organizator: *"Nađi prostore za konferenciju u Beogradu za 200 ljudi ispod 500€ po danu"* → AI pretražuje web, vraća listu sa linkovima, cenama, kontaktima gde dostupno.
+- Organizator: *"IT kompanije u Srbiji koje sponzorišu tech evente"* → AI pretražuje web, vraća listu kompanija + linkove.
+- Učesnik: *"Predavanja o AI-ju na konferencijama u oktobru 2025"* → AI pretražuje web.
 
-**Šta Search pretražuje:**
-- **Baza prostora** (venues) — kapacitet, cena, lokacija, pogodnosti (parking, alkohol, AV oprema)
-- **Baza sponzora** (sponsors) — industrija, budžet, prethodni eventi, kontakt
-- **Baza ponuda** (offers) — popusti, paketi, specijalne ponude
-- **Bilo koja korisnička kolekcija** — developer može da definiše šta se pretražuje
+**Kako radi:**
+1. Korisnik unese prompt u prompt box (obavezno).
+2. Iframe šalje prompt Express-u.
+3. Express prosleđuje FastAPI-ju.
+4. FastAPI poziva **web search tool** (Tavily / SerpAPI / Brave Search).
+5. Gemma **sumarizuje i rangira** rezultate.
+6. Vraća se: lista `{title, url, snippet, ai_summary}` nazad u iframe.
+7. Iframe prikazuje kartice sa linkovima.
 
 **Prompt Box — OBAVEZNO:**
-- Search **mora** da ima prompt box. Bez njega, search nema smisla.
-- Korisnik unosi prirodnim jezikom šta traži.
-- Gemma:
-  1. Parsira upit
-  2. Identifikuje entitete (lokacija, cena, kapacitet, industrija)
-  3. Generiše MongoDB query (ili vector search ako je semantička pretraga)
-  4. Rangira rezultate po relevantnosti
-  5. Vraća strukturirane rezultate u iframe
+Bez prompta, search nema smisla. Prompt je glavni input.
 
 **Rezultat prikaza:**
-- Lista kartica sa ključnim informacijama
-- Klik na karticu → detalji (modal ili nova stranica unutar iframe-a)
-- Kontakt info (email/telefon) — vidljivo samo paid korisnicima
+- Lista kartica: naslov, AI-generisan sažetak, link, favicon
+- Klik → otvara link u novom tabu
+- AI summary na vrhu: *"Našao sam 5 prostora koji odgovaraju. Najbolji match je..."*
 
 **Zašto je ovo bitno:**
-Ovo nije "još jedan search box". Ovo je **AI matchmaking između organizatora i resursa**. To je ono što InfoStone čini platformom, a ne samo widget-om.
+Ovo nije "još jedan search box". Ovo je **AI agent** koji razume kontekst event organizacije i pretražuje internet u ime organizatora, sa rezultatima koji su već filtrirani i sažeti. To je ono što InfoStone čini platformom, a ne samo widget-om.
 
-**Gde se koristi u demou:** Organizator otvara search → ukuca *"prostor za 150 ljudi u Beogradu"* → AI vraća 3 rezultata sa cenama i kontaktima.
+**Gde se koristi u demou:** Organizator otvara search → ukuca *"prostor za 150 ljudi u Beogradu do 500€"* → AI pretražuje internet → vraća 3 rezultata sa linkovima i AI summary-jem.
 
 ---
 
 ### 4.4 Graph View (Grafikon)
 
-**Namena:** Vizuelizacija podataka iz MongoDB kolekcije (npr. broj prijava po danu, distribucija po gradu, budžet po kategoriji).
+**Namena:** Vizuelizacija podataka iz **MongoDB kolekcije** (npr. broj prijava po danu, distribucija po gradu, budžet po kategoriji).
 
 **Tipovi grafikona:**
 - Pie chart
@@ -261,21 +264,20 @@ Za `gdg_form_3`:
 }
 ```
 
-### 5.5 `venues`, `sponsors`, `offers` (seedovane baze za Search demo)
+### 5.5 `search_history` (opciono)
 ```json
-// venues
 {
   "_id": ObjectId,
-  "name": "Impact Hub Beograd",
-  "city": "Beograd",
-  "capacity": 150,
-  "pricePerDay": 400,
-  "currency": "EUR",
-  "amenities": ["parking", "wifi", "projector", "alcohol_allowed"],
-  "contactEmail": "info@impacthub.rs",
-  "tags": ["tech", "startup", "workshop"]
+  "componentId": ObjectId,
+  "prompt": "prostori u Beogradu za 200 ljudi",
+  "results": [
+    { "title": "...", "url": "...", "snippet": "..." }
+  ],
+  "searchedAt": ISODate
 }
 ```
+
+> **Napomena:** Ne postoji seedovana baza `venues` / `sponsors` / `offers` — Search pretražuje **internet**, ne internu bazu.
 
 ---
 
@@ -307,10 +309,10 @@ Za `gdg_form_3`:
 - `GET  /api/protected/:componentId/content?token=...`
 
 ### Prompt Box (paid only)
-- `POST /api/prompt/:componentId` — `{prompt}` → Gemma → MongoDB query → rezultat
-  - Za `tableview`: vraća filtrirane redove + listu kolona
-  - Za `graph`: vraća aggregation rezultat + config grafikona
-  - Za `search`: vraća rangirane rezultate iz `venues`/`sponsors`/`offers`
+- `POST /api/prompt/:componentId` — `{prompt}`
+  - Za `tableview`: Gemma → MongoDB query → filtrirani redovi + lista kolona
+  - Za `graph`: Gemma → MongoDB aggregation → config grafikona + rezultat
+  - Za `search`: Gemma → **web search tool** → **internet pretraga** → rangirani rezultati
   - **Za `form`: 403 Forbidden** (nema prompt box)
 
 ### Files
@@ -331,7 +333,7 @@ Za `gdg_form_3`:
 ```
 **Uloga:** Mapira klase iz korisnikovog `.css` na InfoStone HTML skeleton.
 
-### 7.2 `POST /interpret-prompt`
+### 7.2 `POST /interpret-prompt` (za Table/Graph)
 **Ulaz:**
 ```json
 {
@@ -351,12 +353,39 @@ Za `gdg_form_3`:
 }
 ```
 
-**Za `search` tip:** Gemma umesto Mongo query-ja vraća **rangiranu listu** rezultata iz seedovanih baza — koristi semantičko razumevanje upita.
-
 **Bezbednost:**
 - Gemma **ne generiše** `$where`, `$function`, `$expr` (code execution).
 - Whitelist operatora: `$eq, $gt, $lt, $in, $regex, $and, $or`.
 - Sanitizacija prompta (max 500 karaktera, no SQL/NoSQL injection patterns).
+
+### 7.3 `POST /web-search` (za Search)
+**Ulaz:**
+```json
+{
+  "prompt": "prostori za konferenciju u Beogradu za 200 ljudi ispod 500 eura",
+  "max_results": 5
+}
+```
+**Izlaz:**
+```json
+{
+  "summary": "Našao sam 5 prostora koji odgovaraju...",
+  "results": [
+    { "title": "...", "url": "...", "snippet": "...", "relevance": 0.95 }
+  ]
+}
+```
+
+**Implementacija:**
+1. FastAPI poziva web search tool (Tavily / SerpAPI / Brave) sa prompt-om.
+2. Dobija top N rezultata sa interneta.
+3. Prosleđuje ih Gemmi za sumarizaciju i rangiranje.
+4. Vraća strukturiran odgovor Express-u.
+
+**Bezbednost:**
+- Sanitizacija prompta (max 500 karaktera).
+- Rate limiting (max 10 pretraga/min po korisniku).
+- Zaštita od prompt injection-a.
 
 ---
 
@@ -372,7 +401,7 @@ Za `gdg_form_3`:
 ### Ključne komponente
 - `FormBuilderComponent` — lista polja (text, checkbox, radio, file)
 - `TableViewBuilderComponent` — izbor kolona, source kolekcije
-- `SearchBuilderComponent` — izbor baze (venues/sponsors/offers), polja za pretragu
+- `SearchBuilderComponent` — konfiguracija (max rezultata, filteri sajtova ako podržano)
 - `GraphBuilderComponent` — tip grafikona, grupisanje
 - `CssUploaderComponent` — upload + preview
 - `EmbedCodeComponent` — `<iframe src="http://localhost:3000/api/components/:id/embed" />` + copy
@@ -399,11 +428,10 @@ Svaki sadrži stranicu `/prijava` sa ubačenim `<iframe>`-om.
 /infostone
   /frontend           (Angular — InfoStone)
   /backend            (Express)
-  /ai-service         (FastAPI + Gemma)
+  /ai-service         (FastAPI + Gemma + web search)
   /mock-site-a        (Angular)
   /mock-site-b        (Angular)
   /uploads
-  /seed               (JSON fajlovi za venues, sponsors, offers)
   README.md
 ```
 
@@ -417,7 +445,7 @@ Svaki sadrži stranicu `/prijava` sa ubačenim `<iframe>`-om.
 4. Kopira `<iframe>` → zalepi u mock sajt A → refresh → forma identična sajtu.
 5. Popuni formu kao guest → submit → podaci u dashboard-u.
 6. Kreira **tableview** → prikazuje prijave → u iframe-u ukuca prompt *"samo ljudi iz Beograda"* → tabela se filtrira.
-7. Kreira **search** → ukuca *"prostor za 150 ljudi u Beogradu do 500€"* → AI vraća 3 rezultata sa kontaktima.
+7. Kreira **search** → ukuca *"prostor za 150 ljudi u Beogradu do 500€"* → **AI pretražuje internet** → vraća listu sa linkovima i AI summary-jem.
 8. (Bonus) Kreira **graph** → pie chart prijava po gradu.
 9. (Bonus) Kreira **sensitive** iframe → password lock.
 10. (Bonus) Watermark nestaje nakon upgrade-a na paid.
@@ -430,8 +458,8 @@ Svaki sadrži stranicu `/prijava` sa ubačenim `<iframe>`-om.
 |---|---|
 | **A** | Express: auth, komponente, submissions, dinamičke kolekcije, prompt endpoint, file upload |
 | **B** | Angular InfoStone: login, dashboard, builder-i (form/table/search/graph), CSS uploader, embed code, prompt tester |
-| **C** | FastAPI + Gemma: `/generate-css`, `/interpret-prompt`, seed baze (venues/sponsors/offers), prompt sanitizacija |
-| **D** | Mock sajtovi (2x Angular) + iframe integracija + `postMessage` auto-height + demo scenario + seed podaci |
+| **C** | FastAPI + Gemma: `/generate-css`, `/interpret-prompt`, `/web-search` (Tavily/SerpAPI/Brave integracija), prompt sanitizacija |
+| **D** | Mock sajtovi (2x Angular) + iframe integracija + `postMessage` auto-height + demo scenario |
 
 **Zajednički:** API kontrakt pre kodiranja, MongoDB šeme, finalni demo.
 
@@ -449,10 +477,11 @@ Svaki sadrži stranicu `/prijava` sa ubačenim `<iframe>`-om.
 8. **Angular standalone komponente** (Angular 17+).
 9. **Prompt Box pravila:**
    - Form → **NIKAD** prompt box.
-   - Table/Graph/Search → prompt box samo za **paid** korisnike.
-   - Search → prompt box je **obavezan**.
+   - Table/Graph → prompt box samo za **paid** korisnike → Gemma → **MongoDB query**.
+   - Search → prompt box **obavezan** za paid korisnike → Gemma → **web search tool** → **internet**.
 10. **Gemma ne izvršava slobodne Mongo upite** — samo whitelist operatori.
-11. **Kod mora biti čitljiv**, kratki komentari.
+11. **Search NIKAD ne pretražuje internu bazu** — uvek **internet** preko web search tool-a.
+12. **Kod mora biti čitljiv**, kratki komentari.
 
 ---
 
@@ -463,7 +492,7 @@ Svaki sadrži stranicu `/prijava` sa ubačenim `<iframe>`-om.
 - Forma (text/checkbox/file) + CSS upload + Gemma mapping
 - Iframe embed + watermark
 - Submissions u MongoDB + tabela + CSV export
-- **Search sa prompt box-om** (glavni diferencijator)
+- **Search sa prompt box-om (web search)** (glavni diferencijator)
 
 **NICE:**
 - Table View sa prompt box-om
@@ -479,3 +508,4 @@ Svaki sadrži stranicu `/prijava` sa ubačenim `<iframe>`-om.
 ---
 
 **Kraj specifikacije.**
+```
