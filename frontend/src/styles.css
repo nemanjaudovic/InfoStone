@@ -1,2 +1,38 @@
-/* Globalni stilovi InfoStone dashboard-a */
-body { margin: 0; font-family: system-ui, sans-serif; }
+/* InfoStone dashboard — dark grey theme */
+:root {
+  --bg: #17191c;
+  --surface: #1f2226;
+  --surface-2: #26292e;
+  --border: #32363c;
+  --text: #e8eaed;
+  --text-muted: #9aa0a6;
+  --accent: #5b9dff;
+  --accent-strong: #4a8af0;
+  --font: 'Manrope Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--accent); text-decoration: none; }
+button { cursor: pointer; }
+
+/* Forme ne nasledjuju font podrazumevano — forsiraj globalni font */
+button, input, textarea, select { font-family: inherit; }
+
+/* Zajednicki izgled sadrzaja sekcija (placeholder stranice) */
+.page h1 { margin: 0 0 8px; font-size: 22px; }
+.page p { margin: 0; color: var(--text-muted); }
