@@ -23,7 +23,8 @@ MAX_QUESTION_LEN = 500
 TOP_K = 4
 FULL_CONTEXT_CHARS = 6000  # knowledge up to this size goes to Gemma whole
 GEMMA_TIMEOUT_S = float(os.getenv("CHATBOT_GEMMA_TIMEOUT", "60"))  # slower -> extractive answer
-MAX_ANSWER_CHARS = 800
+MAX_ANSWER_CHARS = 1500
+MAX_SECTION_CHARS = 1500  # extractive answer that returns a whole section (list of advice, prizes...)
 MIN_SCORE = 1.0
 MIN_COVERAGE = 0.5  # share of the question's (IDF-weighted) meaning a chunk must cover
 GEMMA_MIN_COVERAGE = 0.25  # Gemma can reject a weak match itself, so it gets more candidates
@@ -48,6 +49,13 @@ STOPWORDS = {
     "bude", "budu", "desava", "desi", "dogadja", "postanem", "postati", "postane", "postanu",
     "zelim", "hocu", "znam", "znati", "ide", "idem", "uradim", "uraditi",
     "the", "is", "are", "what", "when", "where", "who", "how", "much", "many", "can", "does", "you", "your",
+    # request words: "tell me the advice for teams", "reci mi nesto o nagradama"
+    "tell", "me", "give", "show", "about", "for", "of", "to", "in", "on", "and", "or", "an", "please", "list",
+    "some", "any", "there", "do", "my", "we", "our", "it", "this", "that", "with", "more", "info", "explain",
+    "describe", "know", "want", "need", "reci", "kazi", "daj", "pokazi", "objasni", "molim", "nabroj",
+    "napisi", "informacije", "informacija", "nesto", "malo", "vise", "detalje",
+    "should", "have", "has", "had", "would", "could", "will", "be", "was", "were", "am", "if", "which", "why",
+    "they", "their", "get", "need", "there", "any",
 }
 
 # Small concept map for typical questions about organizations and events: a question term
@@ -256,16 +264,43 @@ def select_chunks(question: str, chunks: list[dict], top_k: int = TOP_K,
 
 # ---------- answering ----------
 
-def _dummy_answer(question: str, sources: list[dict], fallback: str) -> tuple[str, list[int]]:
-    """Extractive answer without an LLM: the best-matching sentence(s) from the top source
-    (the next sources are used only if the top one has no matching sentence)."""
+def _section_text(src: dict, chunks: list[dict]) -> str:
+    """The whole section of a chunk: a long section is split into several chunks with the same
+    heading and url, so the following ones are added back ("Tips for Success" after the cut)."""
+    parts, ids = [src["text"]], {src["id"]}
+    for c in chunks or []:
+        if c["id"] > src["id"] and c["id"] not in ids and c.get("heading") == src.get("heading") \
+                and c.get("url") == src.get("url") and c["id"] == max(ids) + 1:
+            parts.append(c["text"])
+            ids.add(c["id"])
+    text = "\n".join(parts)
+    if len(text) > MAX_SECTION_CHARS:
+        cut = text.rfind("\n", 0, MAX_SECTION_CHARS)
+        text = text[:cut if cut > 0 else MAX_SECTION_CHARS].rstrip() + "\n…"
+    return text
+
+
+def _dummy_answer(question: str, sources: list[dict], fallback: str,
+                  chunks: list[dict] | None = None) -> tuple[str, list[int]]:
+    """Extractive answer without an LLM.
+    - The question names a section ("Tell me the advice for teams", "Koje su nagrade?"): the
+      top source's heading covers most of the question -> the whole section (all its items).
+    - Otherwise the best-matching sentence(s) from the top source (the next sources are used
+      only if the top one has no matching sentence)."""
     if not sources:
         return fallback, []
     groups = question_groups(question)
     wanted = _wanted_patterns(question)
+    top = sources[0]
+    head = _words(top.get("heading", "").split(">")[-1])
+    head_hits = sum(1 for g in groups if any(_hit(t, head) for t in g))
+    # ...unless it asks for one fact ("do kada", "koliko", "gde"): then the matching sentence
+    if groups and not wanted and head_hits / len(groups) > 0.5:
+        return _section_text(top, chunks), [top["id"]]
     for src in sources:
         candidates = []
-        for pos, sentence in enumerate(_split_sentences(src["text"])):
+        sentences = _split_sentences(src["text"])
+        for pos, sentence in enumerate(sentences):
             if len(sentence) < 12:
                 continue
             words = _words(sentence)
@@ -278,12 +313,18 @@ def _dummy_answer(question: str, sources: list[dict], fallback: str) -> tuple[st
             # A list under a matching heading ("Sta poneti" -> "- Laptop...") has no matching
             # sentence: the list itself is the answer
             if any(any(_hit(t, _words(src.get("heading", ""))) for t in g) for g in groups):
-                lines = _split_sentences(src["text"])[:3]
-                return " ".join(lines), [src["id"]]
+                return _section_text(src, chunks), [src["id"]]
             continue
         candidates.sort(key=lambda c: c[0], reverse=True)  # stable: earlier sentence wins ties
         best = candidates[0][0]
         picked = sorted([c for c in candidates if c[0] >= best * 0.6][:DUMMY_MAX_SENTENCES], key=lambda c: c[1])
+        if picked[0][2].endswith("?"):
+            # FAQ: the matching sentence is the question ("Who can participate?"), the answer follows it
+            pos = picked[0][1]
+            follow = [t for t in sentences[pos + 1:pos + 1 + DUMMY_MAX_SENTENCES]]
+            follow = follow[:next((i for i, t in enumerate(follow) if t.endswith("?")), len(follow))]
+            if follow:
+                picked = [(0, pos + 1 + i, t) for i, t in enumerate(follow)]
         answer = " ".join(c[2] if c[2].endswith((".", "!", "?")) else c[2] + "." for c in picked)
         return answer, [src["id"]]
     return _split_sentences(sources[0]["text"])[0], [sources[0]["id"]]
@@ -370,13 +411,13 @@ def answer_question(question: str, knowledge: dict, history: list[dict] | None =
             mode, reason = "gemma", "ok"
             # Gemma gave up although the text matches the question: the extractive answer is better
             if (not answer.strip() or NO_ANSWER_RE.search(answer)) and sources:
-                answer, used_ids = _dummy_answer(question, sources, fallback)
+                answer, used_ids = _dummy_answer(question, sources, fallback, chunks)
                 mode, reason = "dummy", f"gemma said no answer: {raw!r:.200}"
         except Exception as e:  # Gemma down or slower than GEMMA_TIMEOUT_S: still answer from the sources
-            answer, used_ids = _dummy_answer(question, sources, fallback)
+            answer, used_ids = _dummy_answer(question, sources, fallback, chunks)
             reason = f"gemma failed: {e}"
     else:
-        answer, used_ids = _dummy_answer(question, sources, fallback)
+        answer, used_ids = _dummy_answer(question, sources, fallback, chunks)
 
     pool = gemma_sources if mode == "gemma" else sources
     used = [s for s in pool if s["id"] in used_ids]

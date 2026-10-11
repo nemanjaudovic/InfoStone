@@ -15,7 +15,7 @@ const CssSource = require('../models/CssSource');
 const { requireAuth } = require('../middleware/auth');
 const { cssUpload } = require('../middleware/upload');
 const { asyncHandler, HttpError } = require('../utils/http');
-const { rawMarkup, extractClassMap } = require('../embed/templates');
+const { rawMarkup, extractClassMap, applyClassMap } = require('../embed/templates');
 const aiClient = require('../services/aiClient');
 
 router.use(requireAuth);
@@ -42,6 +42,42 @@ function contractProblems(component, html) {
     if (!/<(input|textarea)[\s>]/i.test(html)) problems.push('nema polja za pitanje');
   }
   return problems;
+}
+
+// --- Rezervna mapa klasa (bez Gemme) ---
+// Kad Gemma ne vrati upotrebljiv HTML, klase sajta biramo po imenu iz CSS-a organizacije
+// (".gdg-card" -> kartice, ".gdg-btn" -> dugme...). Dodaju se SAMO klase na nas HTML
+// (applyClassMap), struktura forme ostaje ista, pa forma radi kao i bez stila.
+function siteClasses(css = '') {
+  const noComments = String(css).replace(/\/\*[\s\S]*?\*\//g, '');
+  const selectors = [...noComments.matchAll(/([^{}]+)\{/g)].map((m) => m[1]).join(',');
+  const names = [...selectors.matchAll(/\.(-?[A-Za-z_][\w-]*)/g)].map((m) => m[1]);
+  return [...new Set(names)].filter((c) => !c.startsWith('infostone-') && /[a-z]/i.test(c) && c.length > 2);
+}
+
+function guessClassMap(css) {
+  const classes = siteClasses(css);
+  // najkraci naziv koji odgovara (".btn" pre ".btn-primary-large")
+  const pick = (re, not) =>
+    classes.filter((c) => re.test(c) && !(not && not.test(c))).sort((a, b) => a.length - b.length)[0];
+  const card = pick(/card|panel|tile|surface|box/i, /accent|highlight|table|header|footer|title|body|img|image|text/i);
+  const cardAccent = pick(/(card|panel).*(accent|highlight|featured)|(accent|highlight|featured).*(card|panel)/i);
+  const map = {
+    'infostone-header': [card, cardAccent],
+    'infostone-question': [card],
+    'infostone-title': [pick(/(^|[-_])title$/i, /sub/i) || pick(/title|heading|headline/i, /sub/i)],
+    'infostone-question-title': [pick(/subtitle|label/i, /error|hidden/i)],
+    'infostone-answer': [pick(/input|field|control|textbox/i, /group|wrap|label|error|invalid/i)],
+    'infostone-option': [pick(/option|choice|check|radio/i, /group|list/i)],
+    'infostone-file': [pick(/drop|upload|file/i)],
+    'infostone-file-hint': [pick(/muted|hint|help|caption/i)],
+    'infostone-submit': [pick(/(^|[-_])(btn|button)([-_]primary)?$/i) || pick(/btn|button/i, /secondary|outline|ghost|link|close|icon/i)],
+  };
+  for (const k of Object.keys(map)) {
+    map[k] = map[k].filter(Boolean);
+    if (!map[k].length) delete map[k];
+  }
+  return map;
 }
 
 // multipart polje "css" -> { cssSourceId }
@@ -106,14 +142,26 @@ router.post('/apply', asyncHandler(async (req, res) => {
 
   let html = result && typeof result.styled_html === 'string' ? result.styled_html.trim() : '';
   const notes = [];
-  if (result && result.error) notes.push('Gemma odgovor nije mogao da se procita, koristi se originalni HTML.');
+  let appliedClasses = (result && result.applied_classes) || [];
+  if (result && result.error) {
+    // Pravi razlog (npr. "Failed to parse AI response: ..." ili "Gemma je promenila strukturu") ide u log
+    console.error('css apply (Gemma):', String(result.error).slice(0, 500));
+    notes.push('Gemma odgovor nije upotrebljiv.');
+  }
 
   // Ako Gemma pokvari strukturu forme, zadrzi nas HTML (CSS sajta se i dalje primenjuje)
   const problems = html ? contractProblems(component, html) : ['prazan odgovor'];
-  const usedFallback = problems.length > 0;
+  // AI servis vraca originalni HTML kad odbaci Gemma odgovor: i to je rezervni slucaj
+  const usedFallback = problems.length > 0 || !!(result && result.error) || html === original.trim();
+  if (problems.length) notes.push(`Gemma je promenila strukturu (${problems.join(', ')}).`);
   if (usedFallback) {
-    notes.push(`Gemma je promenila strukturu (${problems.join(', ')}), koristi se originalni HTML sa CSS-om sajta.`);
-    html = original;
+    // Bez Gemme: klase sajta po imenu iz CSS-a (kartice, polja, dugme), na nas proveren HTML
+    const guessed = guessClassMap(source.rawCss);
+    html = applyClassMap(original, guessed);
+    appliedClasses = [...new Set(Object.values(guessed).flat())];
+    notes.push(appliedClasses.length
+      ? `Klase sajta dodate automatski: ${appliedClasses.join(', ')}.`
+      : 'Koristi se originalni HTML sa CSS-om sajta.');
   }
 
   component.styledHtml = `<style>\n${cssForStyleTag(source.rawCss)}\n</style>\n${html}`;
@@ -123,7 +171,7 @@ router.post('/apply', asyncHandler(async (req, res) => {
   res.json({
     styledHtml: component.styledHtml,
     notes: notes.join(' '),
-    appliedClasses: (result && result.applied_classes) || [],
+    appliedClasses,
     usedFallback,
   });
 }));

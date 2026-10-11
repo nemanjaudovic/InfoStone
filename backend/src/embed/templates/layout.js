@@ -33,8 +33,13 @@ const BASE_FORM_CSS = `
 :where(body.infostone-type-form) { margin: 0; padding: 16px; background: #f1f3f4; color: #202124;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
 :where(.infostone-form) { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
-:where(.infostone-header), :where(.infostone-question) { background: #fff; color: #202124; border: 1px solid #dadce0;
-  border-radius: 8px; padding: 20px 24px; } /* sopstvena boja teksta: citljivo i na tamnom sajtu */
+:where(.infostone-header), :where(.infostone-question) { border: 1px solid rgba(127, 127, 127, .35);
+  border-radius: 8px; padding: 20px 24px; }
+/* Bele kartice (Google Forms) samo bez CSS-a sajta; sa CSS-om kartica preuzima boje sajta
+   (providna pozadina, tekst sajta), a klasa sajta (npr. .gdg-card) je uvek jaca od ovoga */
+:where(body:not(.infostone-styled)) :where(.infostone-header, .infostone-question) { background: #fff; color: #202124;
+  border-color: #dadce0; }
+:where(body.infostone-styled) :where(.infostone-header, .infostone-question) { background: rgba(127, 127, 127, .08); }
 :where(.infostone-header) { border-top: 8px solid #4285f4; }
 :where(.infostone-title) { margin: 0; font-size: 28px; font-weight: 600; }
 :where(.infostone-note) { margin: 10px 0 0; font-size: 13px; opacity: .75; }

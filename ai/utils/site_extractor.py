@@ -11,10 +11,16 @@
 #    "chunks": [{"id": int, "heading": str, "url": str, "text": str}],
 #    "stats": {"pages": int, "chunks": int, "chars": int}, "warnings": [str]}
 #
-# Pages rendered by JavaScript (Angular/React apps) come back almost empty when fetched;
-# a warning is added and the organizer should paste the text instead.
+# Pages rendered by JavaScript (React/Angular/Vue apps) come back almost empty when fetched.
+# Such pages are opened in a headless Chromium (Playwright) and read after the JavaScript ran.
+# Playwright is optional: without it those pages get a warning (paste the text instead).
+#   pip install playwright
+#   python -m playwright install chromium
 
+import asyncio
+import json
 import re
+import sys
 from collections import deque
 from html.parser import HTMLParser
 from urllib.parse import urldefrag, urljoin, urlparse
@@ -23,15 +29,24 @@ import requests
 
 MAX_PAGES = 10
 MAX_PAGE_BYTES = 2_000_000
-MAX_CHUNK_CHARS = 800
+MAX_CHUNK_CHARS = 1200  # a typical section (a list of advice, the prizes) stays in one chunk
 MIN_PAGE_CHARS = 200  # less text than this usually means a JavaScript-rendered page
-MIN_KNOWLEDGE_CHARS = 300  # less than this in total: the bot could not answer anything
+MIN_KNOWLEDGE_CHARS = 150  # less than this in total: the bot could not answer anything
 TIMEOUT_S = 15
-USER_AGENT = "InfoStone-Chatbot/1.0 (+event knowledge builder)"
+RENDER_TIMEOUT_MS = 20000  # headless browser: page load
+RENDER_SETTLE_MS = 8000    # headless browser: wait for the app to draw its text
+INSTALL_HINT = "pip install playwright && python -m playwright install chromium"
+# Browser-like, so sites do not serve a bot page instead of their content
+USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/124.0 Safari/537.36 InfoStone-Chatbot/1.0")
 
-# Content inside these tags is navigation, scripts or UI chrome, not knowledge
-SKIP_TAGS = {"script", "style", "noscript", "template", "svg", "nav", "header", "footer",
-             "form", "button", "iframe", "select", "aside"}
+# Content inside these tags is navigation, scripts or UI chrome, not knowledge.
+# (<form> is NOT skipped: some sites wrap the whole page in one, e.g. ASP.NET.)
+SKIP_TAGS = {"script", "style", "noscript", "template", "svg", "nav", "button", "iframe", "select", "aside"}
+# The site's banner/footer is chrome, but a <header> inside <main>/<article> holds the title and date
+PAGE_CHROME_TAGS = {"header", "footer"}
+CONTENT_TAGS = {"main", "article"}
+VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
 BLOCK_TAGS = HEADING_TAGS | {"p", "li", "tr", "dt", "dd", "blockquote", "pre", "div",
                              "section", "article", "main", "table", "ul", "ol", "dl", "br"}
@@ -55,7 +70,12 @@ class _BlockParser(HTMLParser):
         self.blocks, self.links = [], []
         self.title, self.description = "", ""
         self._buf, self._cells = [], None
-        self._skip_depth = 0
+        # Skipping a subtree: the tag that started it and how deep the same tag is nested in it
+        # (only that tag's end closes the subtree, so <span aria-hidden="true"> ends at </span>)
+        self._skip_tag, self._skip_nest = None, 0
+        self._content_depth = 0  # inside <main>/<article>
+        self._ld = None  # text of a <script type="application/ld+json"> being read
+        self.structured = []  # blocks from schema.org Event data (date, place, price...)
         self._in_title = False
         self._heading = None
         self._li = False
@@ -78,11 +98,19 @@ class _BlockParser(HTMLParser):
             self.description = attrs.get("content", "").strip()
         if tag == "title":
             self._in_title = True
-        if tag in SKIP_TAGS or attrs.get("aria-hidden") == "true":
-            self._skip_depth += 1
+        if tag == "script" and attrs.get("type", "").lower() == "application/ld+json" and not self._skip_tag:
+            self._ld = []
+        if self._skip_tag:
+            if tag == self._skip_tag:
+                self._skip_nest += 1
             return
-        if self._skip_depth:
+        if tag not in VOID_TAGS and (tag in SKIP_TAGS or attrs.get("aria-hidden") == "true"
+                                     or (tag in PAGE_CHROME_TAGS and not self._content_depth)):
+            self._flush()
+            self._skip_tag, self._skip_nest = tag, 1
             return
+        if tag in CONTENT_TAGS:
+            self._content_depth += 1
         if tag in BLOCK_TAGS:
             self._flush()
         if tag in HEADING_TAGS:
@@ -97,11 +125,17 @@ class _BlockParser(HTMLParser):
     def handle_endtag(self, tag):
         if tag == "title":
             self._in_title = False
-        if tag in SKIP_TAGS:
-            self._skip_depth = max(0, self._skip_depth - 1)
+        if self._skip_tag:
+            if tag == self._skip_tag:
+                self._skip_nest -= 1
+                if self._skip_nest == 0:
+                    self._skip_tag = None
+                    if tag == "script" and self._ld is not None:
+                        self.structured += _structured_blocks("".join(self._ld))
+                        self._ld = None
             return
-        if self._skip_depth:
-            return
+        if tag in CONTENT_TAGS:
+            self._content_depth = max(0, self._content_depth - 1)
         if tag in ("td", "th") and self._cells is not None:
             self._cells.append(re.sub(r"\s+", " ", "".join(self._buf)).strip())
             self._buf = []
@@ -120,14 +154,56 @@ class _BlockParser(HTMLParser):
             self._li = False
 
     def handle_data(self, data):
-        if self._in_title:
+        if self._ld is not None:
+            self._ld.append(data)
+        elif self._in_title:
             self.title += data
-        elif not self._skip_depth:
+        elif not self._skip_tag:
             self._buf.append(data)
 
     def close(self):
         super().close()
         self._flush()
+
+
+def _structured_blocks(raw: str) -> list:
+    """schema.org Event data that event platforms put in <script type="application/ld+json">
+    (often the most reliable source of date, place and price, even on JavaScript sites)."""
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return []
+    items = data if isinstance(data, list) else data.get("@graph", [data]) if isinstance(data, dict) else []
+    blocks = []
+    for item in items:
+        if not isinstance(item, dict) or "Event" not in str(item.get("@type", "")):
+            continue
+        place = item.get("location") or {}
+        place = place[0] if isinstance(place, list) and place else place
+        address = place.get("address") if isinstance(place, dict) else None
+        if isinstance(address, dict):
+            address = ", ".join(str(address[k]) for k in ("streetAddress", "addressLocality", "addressCountry")
+                                if address.get(k))
+        offers = item.get("offers") or {}
+        offers = offers[0] if isinstance(offers, list) and offers else offers
+        organizer = item.get("organizer") or {}
+        organizer = organizer[0] if isinstance(organizer, list) and organizer else organizer
+        lines = [
+            ("Naziv", item.get("name")),
+            ("Početak", item.get("startDate")),
+            ("Kraj", item.get("endDate")),
+            ("Mesto", ", ".join(str(x) for x in (place.get("name") if isinstance(place, dict) else place, address) if x)),
+            ("Organizator", organizer.get("name") if isinstance(organizer, dict) else organizer),
+            ("Cena", ("besplatno" if str(offers.get("price")).strip() in ("0", "0.0", "0.00") else
+                      f'{offers.get("price")} {offers.get("priceCurrency", "")}'.strip())
+             if isinstance(offers, dict) and offers.get("price") not in (None, "") else None),
+            ("Opis", item.get("description")),
+        ]
+        text = [f"- {label}: {re.sub(r'<[^>]+>', ' ', str(value)).strip()}" for label, value in lines if value]
+        if text:
+            blocks.append(("h", 2, "Podaci o događaju"))
+            blocks += [("p", 0, t) for t in text]
+    return blocks
 
 
 def parse_html(html: str) -> dict:
@@ -137,7 +213,7 @@ def parse_html(html: str) -> dict:
     return {
         "title": re.sub(r"\s+", " ", parser.title).strip(),
         "description": parser.description,
-        "blocks": parser.blocks,
+        "blocks": parser.blocks + parser.structured,
         "links": parser.links,
     }
 
@@ -249,25 +325,114 @@ def _same_site_links(base_url: str, links: list[str]) -> list[str]:
     return out
 
 
-def crawl(start_url: str, max_pages: int = MAX_PAGES) -> list[dict]:
-    """Breadth-first crawl of pages on the same host. Returns parsed pages with their url."""
+def _text_chars(page: dict) -> int:
+    return sum(len(t) for _, _, t in page["blocks"])
+
+
+class _BrowserRenderer:
+    """Headless Chromium for JavaScript-rendered pages. Started on the first page that needs it
+    (one browser for the whole crawl), closed by crawl(). If Playwright or its Chromium is not
+    installed, render() returns None and `missing` explains why."""
+
+    def __init__(self):
+        self._pw = self._browser = self._context = None
+        self.missing = None
+        self.used = False
+
+    def _start(self) -> bool:
+        if self._context:
+            return True
+        if self.missing:
+            return False
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.missing = f"Playwright is not installed ({INSTALL_HINT})"
+            return False
+        # Windows: Playwright starts Chromium as a subprocess, which needs the Proactor event loop;
+        # uvicorn --reload switches the policy to Selector, so use Proactor just for this start
+        old_policy = asyncio.get_event_loop_policy()
+        if sys.platform == "win32" and not isinstance(old_policy, asyncio.WindowsProactorEventLoopPolicy):
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        try:
+            self._pw = sync_playwright().start()
+            self._browser = self._pw.chromium.launch(headless=True)
+            self._context = self._browser.new_context(user_agent=USER_AGENT)
+            # Text is all we need: skip images, fonts and media
+            self._context.route("**/*", lambda route: route.abort()
+                                if route.request.resource_type in ("image", "media", "font")
+                                else route.continue_())
+            return True
+        except Exception as e:  # e.g. Chromium not downloaded yet
+            self.missing = f"Headless browser could not start ({INSTALL_HINT}): {e!r}"
+            self.close()
+            return False
+        finally:
+            if asyncio.get_event_loop_policy() is not old_policy:
+                asyncio.set_event_loop_policy(old_policy)
+
+    def render(self, url: str) -> str | None:
+        if not self._start():
+            return None
+        page = self._context.new_page()
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=RENDER_TIMEOUT_MS)
+            try:  # wait until the app has drawn some text (dev servers keep a socket open,
+                  # so "network idle" alone is not reliable)
+                page.wait_for_function("document.body && document.body.innerText.trim().length > 50",
+                                       timeout=RENDER_SETTLE_MS)
+                page.wait_for_load_state("networkidle", timeout=2000)
+            except Exception:
+                pass  # take whatever is there
+            self.used = True
+            return page.content()
+        except Exception as e:
+            print(f"Headless render failed for {url}: {e}")
+            return None
+        finally:
+            page.close()
+
+    def close(self):
+        for obj, method in ((self._context, "close"), (self._browser, "close"), (self._pw, "stop")):
+            try:
+                if obj:
+                    getattr(obj, method)()
+            except Exception:
+                pass
+        self._pw = self._browser = self._context = None
+
+
+def crawl(start_url: str, max_pages: int = MAX_PAGES, renderer: "_BrowserRenderer | None" = None) -> list[dict]:
+    """Breadth-first crawl of pages on the same host. Returns parsed pages with their url.
+    A page with almost no text (JavaScript app) is opened again in the headless browser."""
     if urlparse(start_url).scheme not in ("http", "https"):
         raise ExtractError("URL must start with http:// or https://")
+    renderer = renderer or _BrowserRenderer()
     queue, seen, pages = deque([start_url]), {start_url}, []
-    while queue and len(pages) < max_pages:
-        url = queue.popleft()
-        try:
-            page = parse_html(fetch_page(url))
-        except (requests.RequestException, ExtractError) as e:
-            if not pages and url == start_url:
-                raise ExtractError(f"Could not load {url}: {e}") from e
-            continue
-        page["url"] = url
-        pages.append(page)
-        for link in _same_site_links(url, page["links"]):
-            if link not in seen:
-                seen.add(link)
-                queue.append(link)
+    try:
+        while queue and len(pages) < max_pages:
+            url = queue.popleft()
+            try:
+                page = parse_html(fetch_page(url))
+            except (requests.RequestException, ExtractError) as e:
+                if not pages and url == start_url:
+                    raise ExtractError(f"Could not load {url}: {e}") from e
+                continue
+            if _text_chars(page) < MIN_PAGE_CHARS:
+                rendered_html = renderer.render(url)
+                if rendered_html:
+                    rendered = parse_html(rendered_html)
+                    if _text_chars(rendered) > _text_chars(page):
+                        rendered["rendered"] = True
+                        page = rendered
+            page["url"] = url
+            pages.append(page)
+            for link in _same_site_links(url, page["links"]):
+                if link not in seen:
+                    seen.add(link)
+                    queue.append(link)
+    finally:
+        renderer.close()
     return pages
 
 
@@ -276,8 +441,9 @@ def crawl(start_url: str, max_pages: int = MAX_PAGES) -> list[dict]:
 def build_knowledge(url: str | None = None, text: str | None = None, source_name: str = "",
                     max_pages: int = MAX_PAGES) -> dict:
     """Build chatbot knowledge from a website URL or from pasted text/Markdown/HTML."""
+    renderer = _BrowserRenderer()
     if url:
-        pages = crawl(url.strip(), max_pages)
+        pages = crawl(url.strip(), max_pages, renderer)
         source = url.strip()
     elif text and text.strip():
         page = parse_html(text) if _looks_like_html(text) else parse_text(text)
@@ -289,9 +455,10 @@ def build_knowledge(url: str | None = None, text: str | None = None, source_name
 
     chunks, seen_texts, warnings = [], set(), []
     for page in pages:
-        if sum(len(t) for _, _, t in page["blocks"]) < MIN_PAGE_CHARS:
+        if _text_chars(page) < MIN_PAGE_CHARS and not page.get("rendered"):
+            hint = f" {renderer.missing}." if renderer.missing else ""
             warnings.append(f"Very little text on {page['url']} - the page is probably rendered by "
-                            "JavaScript. Paste the page text instead.")
+                            f"JavaScript.{hint} Paste the page text instead.")
         title = page["title"].split("|")[0].strip()
         for chunk in chunk_blocks(page["blocks"], page["url"], title):
             key = re.sub(r"\W+", " ", chunk["text"].lower()).strip()
@@ -305,8 +472,10 @@ def build_knowledge(url: str | None = None, text: str | None = None, source_name
     total_chars = sum(len(c["text"]) for c in chunks)
     if total_chars < MIN_KNOWLEDGE_CHARS:
         # Saving this would give a bot that answers "nemam tu informaciju" to every question
+        hint = f" {renderer.missing}." if renderer.missing else ""
         raise ExtractError(f"Only {total_chars} characters of text were found ({source}). The site is probably "
-                           "rendered by JavaScript (Angular/React). Use 'Paste text' or upload an .html/.md file instead.")
+                           f"rendered by JavaScript (Angular/React).{hint} Use 'Paste text' or upload an "
+                           ".html/.md file instead.")
 
     first = pages[0]
     return {
@@ -314,7 +483,8 @@ def build_knowledge(url: str | None = None, text: str | None = None, source_name
         "description": first.get("description", ""),
         "source": source,
         "chunks": chunks,
-        "stats": {"pages": len(pages), "chunks": len(chunks), "chars": sum(len(c["text"]) for c in chunks)},
+        "stats": {"pages": len(pages), "chunks": len(chunks), "chars": sum(len(c["text"]) for c in chunks),
+                  "rendered_pages": sum(1 for p in pages if p.get("rendered"))},
         "warnings": warnings,
     }
 
