@@ -1,180 +1,223 @@
 /* ============================================================
-   GDG Hackathon 2025 — stil sajta organizacije (mock sajt A)
+   PARTY RADAR — stil sajta za pretragu žurki (mock sajt A)
    Ovaj fajl se u demou uploaduje u InfoStone: Gemma mapira klase
-   (.gdg-*) na formu, a ceo CSS se ubacuje u iframe.
+   (.party-*) na formu, a ceo CSS se ubacuje u iframe.
    ============================================================ */
 
 :root {
-  --gdg-bg: #0b1d3a;
-  --gdg-bg-2: #102a52;
-  --gdg-card: #13305e;
-  --gdg-border: #24467d;
-  --gdg-text: #e8f0ff;
-  --gdg-muted: #9db4d9;
-  --gdg-blue: #4285f4;
-  --gdg-green: #34a853;
-  --gdg-yellow: #fbbc05;
-  --gdg-red: #ea4335;
-  --gdg-radius: 14px;
-  --gdg-font: 'Segoe UI', Roboto, system-ui, -apple-system, sans-serif;
+  --pr-bg: #08060f;
+  --pr-bg-2: #120b1f;
+  --pr-card: rgba(255, 255, 255, 0.045);
+  --pr-border: rgba(255, 255, 255, 0.14);
+  --pr-text: #f6f2ff;
+  --pr-muted: #a49ec4;
+  --pr-pink: #ff2d78;
+  --pr-violet: #8b5cf6;
+  --pr-cyan: #22d3ee;
+  --pr-lime: #b6ff3c;
+  --pr-radius: 18px;
+  --pr-font: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
 * { box-sizing: border-box; }
 
+html { scroll-behavior: smooth; }
+
 body {
   margin: 0;
-  font-family: var(--gdg-font);
-  color: var(--gdg-text);
+  font-family: var(--pr-font);
+  color: var(--pr-text);
   background:
-    radial-gradient(1200px 500px at 10% -10%, rgba(66, 133, 244, 0.25), transparent 60%),
-    radial-gradient(900px 400px at 110% 10%, rgba(52, 168, 83, 0.18), transparent 60%),
-    var(--gdg-bg);
+    radial-gradient(1000px 600px at 15% -10%, rgba(255, 45, 120, 0.22), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(139, 92, 246, 0.25), transparent 55%),
+    radial-gradient(800px 500px at 50% 110%, rgba(34, 211, 238, 0.16), transparent 60%),
+    var(--pr-bg);
   min-height: 100vh;
-  line-height: 1.5;
+  line-height: 1.55;
+  overflow-x: hidden;
 }
 
-a { color: var(--gdg-blue); text-decoration: none; }
-a:hover { text-decoration: underline; }
-
-/* ---------- Header sajta ---------- */
-header {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 18px 32px;
-  border-bottom: 1px solid var(--gdg-border);
-  background: rgba(11, 29, 58, 0.85);
-  backdrop-filter: blur(6px);
-  position: sticky;
-  top: 0;
-  z-index: 10;
+/* aurora blobovi iza sadrzaja */
+body::before,
+body::after {
+  content: '';
+  position: fixed;
+  z-index: -1;
+  width: 42vw;
+  height: 42vw;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.5;
+  animation: drift 18s ease-in-out infinite alternate;
+  pointer-events: none;
 }
-header a { color: var(--gdg-text); font-weight: 600; }
-header a:first-child {
-  font-size: 18px;
+body::before { background: rgba(255, 45, 120, 0.35); top: -10vw; left: -8vw; }
+body::after { background: rgba(139, 92, 246, 0.35); bottom: -12vw; right: -8vw; animation-delay: -9s; }
+
+@keyframes drift {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(6vw, 4vh) scale(1.15); }
+}
+
+::selection { background: var(--pr-pink); color: #fff; }
+
+a { color: var(--pr-cyan); text-decoration: none; }
+a:hover { color: var(--pr-pink); }
+
+h1, h2, h3 { line-height: 1.1; letter-spacing: -0.02em; }
+p { margin: 0 0 12px; }
+
+/* ---------- layout stranica ---------- */
+app-home,
+app-tabela {
+  display: block;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 24px 80px;
+}
+
+.tag {
+  display: inline-block;
+  color: var(--pr-cyan);
+  font-size: 12px;
   font-weight: 800;
-  letter-spacing: -0.01em;
-  margin-right: auto;
-  background: linear-gradient(90deg, var(--gdg-blue), var(--gdg-green), var(--gdg-yellow), var(--gdg-red));
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+}
+
+.grad-text {
+  background: linear-gradient(92deg, var(--pr-pink), var(--pr-violet) 45%, var(--pr-cyan));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
-/* ---------- Sadrzaj stranica ---------- */
-app-home,
-app-prijava {
-  display: block;
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 48px 20px 64px;
+.hero { padding: 90px 0 46px; }
+.hero h1 {
+  font-size: clamp(44px, 7vw, 84px);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  line-height: 0.98;
+  margin: 14px 0 20px;
+  text-shadow: 0 0 40px rgba(255, 45, 120, 0.45);
+}
+.lead { font-size: 18px; max-width: 640px; color: var(--pr-muted); }
+
+.stage {
+  margin-top: 26px;
+  padding: 26px 28px;
+  background: var(--pr-card);
+  border: 1px solid var(--pr-border);
+  border-radius: 22px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 0 0 1px rgba(255, 45, 120, 0.05), 0 24px 60px rgba(0, 0, 0, 0.45);
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.stage:hover {
+  border-color: rgba(255, 45, 120, 0.45);
+  box-shadow: 0 0 0 1px rgba(255, 45, 120, 0.15), 0 0 44px rgba(255, 45, 120, 0.22), 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+.stage-head { display: flex; gap: 18px; align-items: center; margin-bottom: 18px; }
+.stage-head h2 { margin: 0 0 4px; font-size: 26px; }
+.stage-head p { margin: 0; color: var(--pr-muted); font-size: 14px; }
+.num {
+  font-size: 42px;
+  font-weight: 900;
+  line-height: 1;
+  color: transparent;
+  -webkit-text-stroke: 1.5px var(--pr-pink);
 }
 
-h1, h2, h3 { margin: 0 0 12px; line-height: 1.2; }
-h1 { font-size: 40px; font-weight: 800; letter-spacing: -0.02em; }
-h2 { font-size: 26px; font-weight: 700; }
-p { margin: 0 0 12px; color: var(--gdg-muted); }
-
-iframe { border-radius: var(--gdg-radius); }
-
-/* ---------- Komponente sajta (Gemma ih mapira na formu) ---------- */
-
-/* Kartica (sajt je koristi za sekcije; na formi: zaglavlje i svako pitanje) */
-.gdg-card {
-  background: var(--gdg-card);
-  border: 1px solid var(--gdg-border);
-  border-radius: var(--gdg-radius);
+/* ---------- komponente koje Gemma mapira na formu ---------- */
+.party-card {
+  background: var(--pr-card);
+  border: 1px solid var(--pr-border);
+  border-radius: var(--pr-radius);
   padding: 22px 26px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
-  color: var(--gdg-text);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  color: var(--pr-text);
 }
-/* Istaknuta kartica (zaglavlje) */
-.gdg-card-accent { border-top: 6px solid var(--gdg-blue); }
+.party-title { color: var(--pr-text); font-size: 26px; font-weight: 800; margin: 0; }
+.party-subtitle { color: var(--pr-text); font-size: 15px; font-weight: 700; }
+.party-muted { color: var(--pr-muted); font-size: 13px; }
+.party-accent-text { color: var(--pr-pink); }
 
-/* Naslovi */
-.gdg-title { color: var(--gdg-text); font-size: 28px; font-weight: 800; letter-spacing: -0.01em; margin: 0; }
-.gdg-subtitle { color: var(--gdg-text); font-size: 16px; font-weight: 600; }
-.gdg-muted { color: var(--gdg-muted); font-size: 13px; }
-.gdg-accent-text { color: var(--gdg-red); }
-
-/* Tekstualna polja */
-.gdg-input,
+.party-input,
 input[type="text"],
 input[type="email"],
 input[type="password"],
 textarea {
   width: 100%;
-  padding: 12px 14px;
+  padding: 12px 16px;
   font: inherit;
-  color: var(--gdg-text);
-  background: var(--gdg-bg-2);
-  border: 1px solid var(--gdg-border);
-  border-radius: 10px;
+  color: var(--pr-text);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--pr-border);
+  border-radius: 12px;
   outline: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.gdg-input:focus,
+.party-input:focus,
 input:focus,
 textarea:focus {
-  border-color: var(--gdg-blue);
-  box-shadow: 0 0 0 3px rgba(66, 133, 244, 0.3);
+  border-color: var(--pr-pink);
+  box-shadow: 0 0 0 3px rgba(255, 45, 120, 0.25), 0 0 24px rgba(255, 45, 120, 0.35);
 }
+input::placeholder, textarea::placeholder { color: var(--pr-muted); opacity: 0.7; }
 textarea { min-height: 100px; resize: vertical; }
-input::placeholder, textarea::placeholder { color: var(--gdg-muted); opacity: 0.7; }
 
-/* Opcije (checkbox / radio) */
-.gdg-option { display: flex; align-items: center; gap: 10px; color: var(--gdg-text); cursor: pointer; }
+.party-option { display: flex; align-items: center; gap: 10px; color: var(--pr-text); cursor: pointer; }
 input[type="checkbox"],
-input[type="radio"] { width: 18px; height: 18px; accent-color: var(--gdg-blue); }
+input[type="radio"] { width: 18px; height: 18px; accent-color: var(--pr-pink); }
 
-/* Zona za upload */
-.gdg-dropzone {
+.party-dropzone {
   padding: 16px;
-  border: 1px dashed var(--gdg-border);
-  border-radius: 10px;
-  background: var(--gdg-bg-2);
-  color: var(--gdg-muted);
+  border: 2px dashed rgba(182, 255, 60, 0.45);
+  border-radius: 12px;
+  background: rgba(182, 255, 60, 0.05);
+  color: var(--pr-muted);
 }
-input[type="file"] { color: var(--gdg-muted); }
+input[type="file"] { color: var(--pr-muted); }
 input[type="file"]::file-selector-button {
   margin-right: 12px;
-  padding: 8px 14px;
+  padding: 9px 16px;
   border: 0;
-  border-radius: 8px;
-  background: var(--gdg-blue);
+  border-radius: 999px;
+  background: linear-gradient(92deg, var(--pr-pink), var(--pr-violet));
   color: #fff;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
 }
 
-/* Glavno dugme */
-.gdg-btn,
+.party-btn,
 button[type="submit"] {
-  padding: 13px 28px;
+  padding: 13px 30px;
   font: inherit;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(90deg, var(--gdg-blue), #5e97f6);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #0b0614;
+  background: linear-gradient(92deg, var(--pr-lime), var(--pr-cyan));
   border: 0;
   border-radius: 999px;
   cursor: pointer;
-  box-shadow: 0 8px 20px rgba(66, 133, 244, 0.35);
-  transition: transform 0.1s ease, box-shadow 0.15s ease;
+  box-shadow: 0 0 24px rgba(182, 255, 60, 0.4);
+  transition: transform 0.12s ease, box-shadow 0.2s ease;
 }
-.gdg-btn:hover,
-button[type="submit"]:hover { box-shadow: 0 10px 26px rgba(66, 133, 244, 0.5); }
-.gdg-btn:active,
-button[type="submit"]:active { transform: translateY(1px); }
-button:disabled { opacity: 0.6; cursor: default; }
+.party-btn:hover,
+button[type="submit"]:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 36px rgba(182, 255, 60, 0.6), 0 0 60px rgba(34, 211, 238, 0.35);
+}
+button:disabled { opacity: 0.55; cursor: default; }
 
-/* Obavestenja */
-.gdg-alert-success {
-  padding: 14px 16px;
-  border-radius: 10px;
-  background: rgba(52, 168, 83, 0.15);
-  border: 1px solid rgba(52, 168, 83, 0.5);
-  color: #b8f5c8;
-  font-weight: 600;
+.party-alert-success {
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: rgba(182, 255, 60, 0.12);
+  border: 1px solid rgba(182, 255, 60, 0.5);
+  color: var(--pr-lime);
+  font-weight: 700;
 }
-.gdg-alert-error { color: #ff8a80; font-size: 13px; font-weight: 500; }
-[role="alert"] { color: #ff8a80; font-size: 13px; font-weight: 500; }
+.party-alert-error,
+[role="alert"] { color: var(--pr-pink); font-size: 13px; font-weight: 600; }
