@@ -24,7 +24,7 @@ router.use(requireAuth);
 const cssForStyleTag = (css = '') => String(css).replace(/<\/style/gi, '<\\/style');
 
 /**
- * Da li Gemma izlaz i dalje radi sa nasom skriptom (embed/public/form.js):
+ * Da li Gemma izlaz i dalje radi sa nasom skriptom (embed/public/form.js, chatbot.js):
  * mora postojati <form> i sva polja sa istim name atributima. Vraca listu problema.
  */
 function contractProblems(component, html) {
@@ -35,6 +35,11 @@ function contractProblems(component, html) {
       const re = new RegExp(`name\\s*=\\s*["']${f.name}["']`);
       if (!re.test(html)) problems.push(`nedostaje polje "${f.name}"`);
     }
+  }
+  // Chatbot (embed/public/chatbot.js): bez <form> i polja za pitanje ostaje samo pozdrav
+  if (component.type === 'chatbot') {
+    if (!/<form[\s>]/i.test(html)) problems.push('nema <form> taga');
+    if (!/<(input|textarea)[\s>]/i.test(html)) problems.push('nema polja za pitanje');
   }
   return problems;
 }

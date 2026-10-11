@@ -25,6 +25,7 @@ MAX_PAGES = 10
 MAX_PAGE_BYTES = 2_000_000
 MAX_CHUNK_CHARS = 800
 MIN_PAGE_CHARS = 200  # less text than this usually means a JavaScript-rendered page
+MIN_KNOWLEDGE_CHARS = 300  # less than this in total: the bot could not answer anything
 TIMEOUT_S = 15
 USER_AGENT = "InfoStone-Chatbot/1.0 (+event knowledge builder)"
 
@@ -301,6 +302,11 @@ def build_knowledge(url: str | None = None, text: str | None = None, source_name
 
     if not chunks:
         raise ExtractError("No readable text found. " + " ".join(warnings))
+    total_chars = sum(len(c["text"]) for c in chunks)
+    if total_chars < MIN_KNOWLEDGE_CHARS:
+        # Saving this would give a bot that answers "nemam tu informaciju" to every question
+        raise ExtractError(f"Only {total_chars} characters of text were found ({source}). The site is probably "
+                           "rendered by JavaScript (Angular/React). Use 'Paste text' or upload an .html/.md file instead.")
 
     first = pages[0]
     return {

@@ -1,4 +1,4 @@
-import { Component, HostListener, inject } from '@angular/core';
+import { Component, HostListener, OnInit, inject } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
@@ -7,6 +7,7 @@ import { ComponentsService } from '../../../core/services/components.service';
 import { CssService } from '../../../core/services/css.service';
 import { ToolsService } from '../../../core/services/tools.service';
 import { ChatbotKnowledge, ChatbotSource } from '../../../core/models/ai.model';
+import { InfoComponent } from '../../../core/models/component.model';
 
 type SourceKind = 'url' | 'text' | 'file';
 
@@ -29,6 +30,17 @@ interface ChatbotResult {
   imports: [FormsModule],
   template: `
     <div class="builder">
+      @if (existing.length) {
+        <label class="field existing">
+          Open an existing chatbot
+          <select class="input" [ngModel]="result?.id ?? ''" (ngModelChange)="openExisting($event)" [disabled]="busy">
+            <option value="">— new chatbot —</option>
+            @for (c of existing; track c._id) {
+              <option [value]="c._id">{{ c.title || 'Untitled' }} ({{ c.collectionName }})</option>
+            }
+          </select>
+        </label>
+      }
       <input class="form-title" [(ngModel)]="title" placeholder="Chatbot title (e.g. Ask us anything)" />
 
       <div class="cell">
@@ -95,7 +107,7 @@ interface ChatbotResult {
         <p class="generate-error">{{ error }}</p>
       }
       <button type="button" class="generate" (click)="generate()" [disabled]="busy">
-        {{ busy ? step : result ? 'Update knowledge' : 'Generate' }}
+        {{ busy ? step : result ? 'Update' : 'Generate' }}
       </button>
 
       @if (result) {
@@ -130,7 +142,7 @@ interface ChatbotResult {
               </details>
             </div>
           } @else {
-            <p class="muted note">The bot has no knowledge yet — add a source above and click "Update knowledge".</p>
+            <p class="muted note">The bot has no knowledge yet — add a source above and click "Update".</p>
           }
 
           <label class="muted" for="embed-code">Embed code — paste it into your site</label>
@@ -154,6 +166,7 @@ interface ChatbotResult {
   `,
   styles: [
     `
+      .existing { margin-bottom: 4px; }
       .builder { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; padding-top: 4px; }
 
       .form-title {
@@ -282,7 +295,7 @@ interface ChatbotResult {
     `,
   ],
 })
-export class ChatbotComponent {
+export class ChatbotComponent implements OnInit {
   private componentsApi = inject(ComponentsService);
   private cssApi = inject(CssService);
   private toolsApi = inject(ToolsService);
@@ -310,6 +323,46 @@ export class ChatbotComponent {
   knowledge: ChatbotKnowledge | null = null;
   previewHeight = 420;
   copied = false;
+  existing: InfoComponent[] = [];
+  // Naslov i pozdrav kakvi su sacuvani na backend-u (da "Update" zna da li ima sta da sacuva)
+  private savedTitle = '';
+  private savedGreeting = '';
+
+  ngOnInit(): void {
+    this.loadExisting();
+  }
+
+  private loadExisting(): void {
+    this.componentsApi.list().subscribe({
+      next: (list) => (this.existing = list.filter((c) => c.type === 'chatbot')),
+      error: () => (this.existing = []),
+    });
+  }
+
+  // Otvara sacuvan chatbot (posle povratka na stranicu): podesavanja, znanje, embed kod
+  async openExisting(id: string): Promise<void> {
+    if (!id) {
+      this.reset();
+      return;
+    }
+    const c = this.existing.find((x) => x._id === id);
+    if (!c) return;
+    this.error = null;
+    this.title = c.title;
+    this.greeting = c.schema?.greeting ?? '';
+    this.savedTitle = this.title.trim();
+    this.savedGreeting = this.greeting.trim();
+    this.cssFiles = [];
+    this.copied = false;
+    this.result = this.buildResult(c._id, c.title, !!c.styledHtml, '');
+    this.knowledge = null;
+    try {
+      this.knowledge = await firstValueFrom(this.toolsApi.chatbotKnowledge(c._id));
+    } catch (err) {
+      // 404 = chatbot jos nema znanje (to je u redu); ostalo prikazi
+      if ((err as HttpErrorResponse).status !== 404) this.error = this.errorText(err);
+    }
+  }
 
   onKnowledgeFile(e: Event): void {
     this.sourceFile = (e.target as HTMLInputElement).files?.[0] ?? null;
@@ -366,6 +419,12 @@ export class ChatbotComponent {
   generate(): void {
     const source = this.source();
     if (typeof source === 'string') {
+      // Postojeci chatbot bez novog izvora: samo sacuvaj naslov/pozdrav
+      if (this.result && this.settingsChanged() && this.sourceEmpty()) {
+        this.error = null;
+        void this.saveSettingsOnly();
+        return;
+      }
       this.error = source;
       return;
     }
@@ -373,17 +432,57 @@ export class ChatbotComponent {
     void this.run(source);
   }
 
+  private sourceEmpty(): boolean {
+    if (this.sourceKind === 'url') return !this.sourceUrl.trim();
+    if (this.sourceKind === 'text') return !this.sourceText.trim();
+    return !this.sourceFile;
+  }
+
+  private settingsChanged(): boolean {
+    return (this.title.trim() || 'Ask us') !== (this.savedTitle || 'Ask us') || this.greeting.trim() !== this.savedGreeting;
+  }
+
+  // Naslov i pozdrav posle kreiranja (pozdrav je u schema; izmena ne brise CSS stil chatbot-a)
+  private async saveSettings(): Promise<void> {
+    if (!this.result || !this.settingsChanged()) return;
+    this.step = 'Saving settings…';
+    const title = this.title.trim() || 'Ask us';
+    const greeting = this.greeting.trim();
+    await firstValueFrom(this.componentsApi.update(this.result.id, { title, schema: greeting ? { greeting } : {} }));
+    this.savedTitle = title;
+    this.savedGreeting = greeting;
+    this.result = this.buildResult(this.result.id, title, this.result.styled, this.result.notes);
+    this.loadExisting();
+  }
+
+  private async saveSettingsOnly(): Promise<void> {
+    this.busy = true;
+    try {
+      await this.saveSettings();
+      this.reloadPreview();
+    } catch (err) {
+      this.error = this.errorText(err);
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  private errorText(err: unknown): string {
+    const e = err as HttpErrorResponse;
+    return e.error?.error || e.message || 'Something went wrong.';
+  }
+
   // Prvi put: komponenta (+ CSS preko Gemme) pa znanje. Posle toga samo novo znanje za isti chatbot.
   private async run(source: ChatbotSource): Promise<void> {
     this.busy = true;
     try {
       if (!this.result) await this.create();
+      else await this.saveSettings();
       this.step = 'url' in source ? 'Reading your website…' : 'Learning from your text…';
       this.knowledge = await firstValueFrom(this.toolsApi.buildChatbotKnowledge(this.result!.id, source));
       this.reloadPreview();
     } catch (err) {
-      const e = err as HttpErrorResponse;
-      this.error = e.error?.error || e.message || 'Something went wrong.';
+      this.error = this.errorText(err);
     } finally {
       this.busy = false;
     }
@@ -402,21 +501,30 @@ export class ChatbotComponent {
       }),
     );
     const id = created.component._id;
+    this.savedTitle = title;
+    this.savedGreeting = this.greeting.trim();
+    // Rezultat odmah: ako CSS ili znanje ne uspeju, "Update" nastavlja sa ISTIM chatbot-om
+    // (ranije je svaki novi pokusaj pravio novu komponentu)
+    this.result = this.buildResult(id, title, false, '');
+    this.loadExisting();
 
-    let styled = false;
-    let notes = '';
     const css = this.combinedCss();
     if (css) {
       this.step = 'Applying your CSS with Gemma…';
-      const uploaded = await firstValueFrom(this.cssApi.upload(css));
-      const applied = await firstValueFrom(this.cssApi.apply(id, uploaded.cssSourceId));
-      styled = true;
-      const classes = applied.appliedClasses?.length ? `Gemma applied: ${applied.appliedClasses.join(', ')}. ` : '';
-      notes = `${classes}${applied.notes || ''}`.trim();
+      try {
+        const uploaded = await firstValueFrom(this.cssApi.upload(css));
+        const applied = await firstValueFrom(this.cssApi.apply(id, uploaded.cssSourceId));
+        const classes = applied.appliedClasses?.length ? `Gemma applied: ${applied.appliedClasses.join(', ')}. ` : '';
+        this.result = this.buildResult(id, title, true, `${classes}${applied.notes || ''}`.trim());
+      } catch (err) {
+        this.result = this.buildResult(id, title, false, `CSS was not applied (${this.errorText(err)}); the chatbot uses the default style.`);
+      }
     }
+  }
 
+  private buildResult(id: string, title: string, styled: boolean, notes: string): ChatbotResult {
     const embedUrl = this.componentsApi.embedUrl(id);
-    this.result = {
+    return {
       id,
       embedUrl,
       embedCode: `<iframe src="${embedUrl}" style="width:100%;border:0;" title="${title.replace(/"/g, '&quot;')}"></iframe>`,
@@ -440,6 +548,10 @@ export class ChatbotComponent {
     this.error = null;
     this.cssFiles = [];
     this.copied = false;
+    this.title = '';
+    this.greeting = '';
+    this.savedTitle = '';
+    this.savedGreeting = '';
   }
 
   copyEmbed(): void {
