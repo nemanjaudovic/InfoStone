@@ -1,7 +1,8 @@
 // Form (guide §4.1): text, textarea, checkbox, radio, file. NEMA prompt box.
 // markup() je sirov HTML forme: salje se Gemmi na "Generate" i prikazuje dok stil nije primenjen.
-// Struktura prati form builder iz dashboard-a (Google Forms izgled): zaglavlje + svako pitanje
-// u svojoj kartici. Bez kontrola builder-a (edit/delete/add, Mandatory, CSS upload, Generate).
+// Zaglavlje + svako pitanje u svojoj kartici. Bez kontrola builder-a (edit/delete/add,
+// Mandatory, CSS upload, Generate). Neutralan izgled (NEMA "Your answer" / "* obavezno polje"
+// Google Forms tekstova) — izgled daje CSS sajta organizacije.
 // Klase infostone-* i name atributi su ugovor sa embed/public/form.js — Gemma ih ne sme menjati.
 const { escapeHtml } = require('./layout');
 
@@ -18,7 +19,7 @@ function question(f) {
   let body;
   switch (f.type) {
     case 'textarea':
-      body = `<textarea class="infostone-answer infostone-input" id="${id}" name="${name}" rows="3" placeholder="Your answer"${req}${len}></textarea>`;
+      body = `<textarea class="infostone-answer infostone-input" id="${id}" name="${name}" rows="3"${req}${len}></textarea>`;
       break;
     case 'checkbox':
     case 'radio':
@@ -30,7 +31,7 @@ function question(f) {
       body = `<label class="infostone-file"><input type="file" id="${id}" name="${name}" accept=".pdf,.docx,.png,.jpg,.jpeg"${req}><span class="infostone-file-hint">PDF, DOCX, PNG ili JPG, do 5MB</span></label>`;
       break;
     default: // text
-      body = `<input class="infostone-answer infostone-input" id="${id}" type="${f.inputType === 'email' ? 'email' : 'text'}" name="${name}" placeholder="Your answer"${req}${len}>`;
+      body = `<input class="infostone-answer infostone-input" id="${id}" type="${f.inputType === 'email' ? 'email' : 'text'}" name="${name}"${req}${len}>`;
   }
 
   // Checkbox/radio: naslov nije <label> (vise inputa) -> role=group + aria-labelledby
@@ -51,7 +52,6 @@ module.exports = {
   <form class="infostone-form" enctype="multipart/form-data" novalidate>
     <div class="infostone-header">
       <h2 class="infostone-title">${escapeHtml(component.title)}</h2>
-      ${(component.schema?.fields || []).some((f) => f.required) ? '<p class="infostone-note"><span class="infostone-required">*</span> obavezno polje</p>' : ''}
     </div>
     <div class="infostone-fields">
       ${(component.schema?.fields || []).map(question).join('\n      ')}

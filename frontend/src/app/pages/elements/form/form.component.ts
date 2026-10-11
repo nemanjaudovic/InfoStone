@@ -34,7 +34,13 @@ interface Question {
   imports: [FormsModule],
   template: `
     <div class="builder">
-      <input class="form-title" [(ngModel)]="formTitle" placeholder="Form title (e.g. Hackathon application)" />
+      <input
+        class="form-title"
+        [(ngModel)]="formTitle"
+        (ngModelChange)="onTitleChange()"
+        placeholder="Form title (e.g. Hackathon application)"
+        [class.invalid]="generateError !== null && !formTitle.trim()"
+      />
 
       @for (q of questions; track q.id; let last = $last) {
         <div class="question">
@@ -413,6 +419,7 @@ interface Question {
         margin-bottom: 14px;
       }
       .form-title:focus { border-bottom-color: var(--accent); outline: none; }
+      .form-title.invalid { border-bottom-color: #ff9e9e; }
 
       .file-list li { display: flex; align-items: center; justify-content: center; gap: 6px; }
       .remove-file { background: none; border: 0; color: var(--text-muted); font-size: 16px; line-height: 1; padding: 0 4px; }
@@ -589,6 +596,11 @@ export class FormComponent {
   }
 
   generate(): void {
+    // Naslov forme je obavezan (kao i naslov svakog pitanja)
+    if (!this.formTitle.trim()) {
+      this.generateError = 'The form needs a title before generating.';
+      return;
+    }
     // Sva pitanja moraju imati naslov pre generisanja
     const missing = this.questions.filter((q) => !(q.title || '').trim());
     if (missing.length > 0) {
@@ -640,7 +652,7 @@ export class FormComponent {
       const created = await firstValueFrom(
         this.componentsApi.create({
           type: 'form',
-          title: this.formTitle.trim() || 'Untitled form',
+          title: this.formTitle.trim(),
           schema: { fields: this.toFields() },
           sensitive: false,
           promptEnabled: false,
@@ -692,8 +704,8 @@ export class FormComponent {
   }
 
   onTitleChange(): void {
-    // Cim svi naslovi budu popunjeni, ukloni poruku o gresci
-    if (this.generateError && this.questions.every((q) => (q.title || '').trim())) {
+    // Cim naslov forme i svi naslovi pitanja budu popunjeni, ukloni poruku o gresci
+    if (this.generateError && this.formTitle.trim() && this.questions.every((q) => (q.title || '').trim())) {
       this.generateError = null;
     }
   }
