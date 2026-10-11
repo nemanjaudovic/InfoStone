@@ -76,7 +76,9 @@ async function runChatbot(component, prompt, history) {
     const { _id, ...data } = knowledge;
     result = await aiClient.chatbotAsk(prompt, data, cleanHistory(history));
   } catch (err) {
-    throw new HttpError(502, `AI servis nije uspeo: ${err.message}`);
+    // Posetilac ne treba da vidi tehnicke detalje ("fetch failed"); oni idu u log servera
+    console.error('chatbot ask:', err.message);
+    throw new HttpError(502, 'Bot trenutno ne moze da odgovori, pokusaj ponovo za minut.');
   }
   const answer = {
     answer: String(result?.answer || ''),

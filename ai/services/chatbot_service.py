@@ -4,8 +4,11 @@
 #
 # The site holds plain information ("About us", schedule...), not ready-made Q&A, so retrieval
 # looks for the idea of the question, not only its words (SYNONYMS + question type), and Gemma
-# reasons over the selected text. Only those chunks go to Gemma, so the prompt stays small
-# (the Kaggle Gemma runs out of GPU memory on long inputs).
+# reasons over the selected text.
+# A typical event site is small (a few thousand characters): up to FULL_CONTEXT_CHARS Gemma gets
+# ALL chunks, because word matching misses paraphrases ("koliko traje" -> "36 sati"). Larger
+# knowledge goes through retrieval so the prompt stays small (the Kaggle Gemma runs out of GPU
+# memory on long inputs).
 # Without GEMMA_BASE_URL (or if Gemma fails) a "dummy" mode answers extractively: it returns the
 # sentence from the sources that best matches the question.
 
@@ -17,9 +20,17 @@ import re
 from ai.prompts.chatbot_prompts import CHATBOT_SYSTEM_PROMPT
 
 MAX_QUESTION_LEN = 500
-TOP_K = 3
+TOP_K = 4
+FULL_CONTEXT_CHARS = 6000  # knowledge up to this size goes to Gemma whole
+GEMMA_TIMEOUT_S = float(os.getenv("CHATBOT_GEMMA_TIMEOUT", "60"))  # slower -> extractive answer
+MAX_ANSWER_CHARS = 800
 MIN_SCORE = 1.0
 MIN_COVERAGE = 0.5  # share of the question's (IDF-weighted) meaning a chunk must cover
+GEMMA_MIN_COVERAGE = 0.25  # Gemma can reject a weak match itself, so it gets more candidates
+GEMMA_TOP_K = 5
+# Gemma (or the extractive mode) saying it has no answer
+NO_ANSWER_RE = re.compile(r"nemam (tu |tu informaciju|informacij|odgovor)|ne znam|nije navedeno|nema informacij|"
+                          r"don.t (have|know)|not (mentioned|available|provided|in the sources)|no information", re.I)
 MAX_HISTORY_TURNS = 3
 DUMMY_MAX_SENTENCES = 2
 
@@ -57,7 +68,7 @@ SYNONYMS = {
     "jest": ["obrok", "doruc", "ruca", "vecer", "pica"],
     "spav": ["smestaj", "odmor", "duse", "vrec"],
     "prenoc": ["smestaj", "odmor", "noci"],
-    "kontakt": ["mejl", "email", "discord", "pisite", "javite", "pult"],
+    "kontakt": ["kontakt", "mejl", "email", "discord", "pisite", "javite", "pult"],
     "javi": ["mejl", "email", "discord", "pisite", "javite"],
     "lokacij": ["adres", "ulica", "lokacij", "sala", "sprat"],
     "odrzav": ["lokacij", "odrzava"],
@@ -80,6 +91,59 @@ SYNONYMS = {
     "ljud": ["ucesnik", "clana", "osoba"],
     "ucestv": ["ucesni", "ucestv", "prijav"],
     "hakato": ["hakato", "hackathon"],
+    # generic event vocabulary
+    "pocin": ["pocet", "odrzava", "otvaranj", "pocin"],
+    "pocet": ["pocet", "odrzava", "otvaranj"],
+    "traj": ["sati", "trajanj", "traje", "odrzava"],
+    "ocen": ["kriterij", "ziri", "ocen"],
+    "ziri": ["ziri", "kriterij"],
+    "kriterij": ["kriterij", "ziri"],
+    "parkir": ["parking", "parkir"],
+    "pones": ["poneti", "pones"],
+    "tem": ["tema", "temu", "temom"],
+    "prijav": ["prijav", "forma", "rok"],
+    "rok": ["rok", "prijav"],
+    "wifi": ["wifi", "bezicn"],
+    # English questions about a Serbian site
+    "free": ["besplat", "naplac", "free"],
+    "price": ["besplat", "cena", "eur", "naplac"],
+    "cost": ["besplat", "cena", "eur", "naplac"],
+    "pay": ["besplat", "cena", "eur", "naplac"],
+    "start": ["pocet", "pocin", "odrzava", "otvaranj"],
+    "begin": ["pocet", "pocin", "odrzava", "otvaranj"],
+    "end": ["kraj", "zatvaranj"],
+    "long": ["sati", "trajanj", "traje"],
+    "food": ["obrok", "doruc", "ruca", "vecer", "pica", "hran"],
+    "eat": ["obrok", "doruc", "ruca", "vecer", "pica", "hran"],
+    "lunch": ["ruca"],
+    "breakfast": ["doruc"],
+    "dinner": ["vecer"],
+    "sleep": ["smestaj", "odmor", "duse", "vrec"],
+    "prize": ["nagrad", "mesto", "eur", "usd"],
+    "award": ["nagrad", "mesto", "eur", "usd"],
+    "win": ["pobed", "nagrad", "mesto"],
+    "team": ["tim", "clan"],
+    "age": ["godin", "najmanje"],
+    "old": ["godin", "najmanje"],
+    "regist": ["prijav", "registr"],
+    "apply": ["prijav"],
+    "deadline": ["prijav", "rok"],
+    "contact": ["mejl", "email", "discord", "pisite", "kontakt", "pult"],
+    "email": ["mejl", "email"],
+    "park": ["parking"],
+    "bring": ["poneti", "pones"],
+    "rule": ["pravil", "kodeks"],
+    "judg": ["ziri", "kriterij"],
+    "criteri": ["kriterij", "ziri"],
+    "theme": ["tema", "temu"],
+    "topic": ["tema", "temu"],
+    "sponsor": ["sponzor", "partner"],
+    "partner": ["sponzor", "partner"],
+    "mentor": ["mentor"],
+    "organiz": ["organizator", "organizuje", "vodi"],
+    "hackathon": ["hakato", "hackathon"],
+    "location": ["lokacij", "adres", "ulica"],
+    "address": ["lokacij", "adres", "ulica"],
 }
 
 # Question type -> pattern that a good answer usually contains
@@ -102,8 +166,25 @@ def _normalize(text: str) -> str:
 
 
 def _stem(word: str) -> str:
-    # Crude stemming for Serbian cases: "osnovana" -> "osnova", "hakatonu" -> "hakato"
-    return word[:max(4, len(word) - 2)] if len(word) > 4 else word
+    # Crude stemming for Serbian cases; matched as a WORD PREFIX (see _hit), so it can be short:
+    # "parkiram" -> "parki" (parking), "ponesem" -> "pone" (poneti), "tema" -> "tem" (temu)
+    if len(word) >= 6:
+        return word[:max(4, len(word) - 3)]
+    if len(word) >= 4 and not word.isdigit():
+        return word[:-1]
+    return word
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"\w+", _normalize(text))
+
+
+def _hit(term: str, words: list[str]) -> bool:
+    """A term matches a word that starts with it ("besplat" -> "besplatno"), not any substring,
+    so "tim" does not match "optimizacija". Terms with a space or punctuation match as text."""
+    if not term.isalnum():
+        return term in " ".join(words)
+    return any(w.startswith(term) for w in words)
 
 
 def question_groups(question: str) -> list[set[str]]:
@@ -136,7 +217,8 @@ def _split_sentences(text: str) -> list[str]:
 
 # ---------- retrieval ----------
 
-def select_chunks(question: str, chunks: list[dict], top_k: int = TOP_K) -> list[dict]:
+def select_chunks(question: str, chunks: list[dict], top_k: int = TOP_K,
+                  min_coverage: float = MIN_COVERAGE) -> list[dict]:
     """Rank chunks by IDF-weighted matches of the question's word groups (heading counts double),
     plus a bonus when the chunk contains what the question type asks for (a year, a number, a name).
     Chunks covering less than MIN_COVERAGE of the question are dropped, so off-topic questions
@@ -144,14 +226,14 @@ def select_chunks(question: str, chunks: list[dict], top_k: int = TOP_K) -> list
     groups = question_groups(question)
     if not groups or not chunks:
         return []
-    texts = [(_normalize(c.get("heading", "")), _normalize(c.get("text", ""))) for c in chunks]
+    texts = [(_words(c.get("heading", "")), _words(c.get("text", ""))) for c in chunks]
     n = len(chunks)
 
     def idf(present: int) -> float:
         return math.log(1 + n / (1 + present))
 
-    term_idf = {t: idf(sum(t in h or t in b for h, b in texts)) for g in groups for t in g}
-    group_idf = [idf(sum(any(t in h or t in b for t in g) for h, b in texts)) for g in groups]
+    term_idf = {t: idf(sum(_hit(t, h) or _hit(t, b) for h, b in texts)) for g in groups for t in g}
+    group_idf = [idf(sum(any(_hit(t, h) or _hit(t, b) for t in g) for h, b in texts)) for g in groups]
     total = sum(group_idf)
     wanted = _wanted_patterns(question)
 
@@ -159,14 +241,14 @@ def select_chunks(question: str, chunks: list[dict], top_k: int = TOP_K) -> list
     for chunk, (head, body) in zip(chunks, texts):
         score, covered = 0.0, 0.0
         for g, g_idf in zip(groups, group_idf):
-            hits = [t for t in g if t in head or t in body]
+            hits = [t for t in g if _hit(t, head) or _hit(t, body)]
             if hits:
                 covered += g_idf
-                score += max(term_idf[t] for t in hits) * (2 if any(t in head for t in hits) else 1)
+                score += max(term_idf[t] for t in hits) * (2 if any(_hit(t, head) for t in hits) else 1)
         coverage = covered / total if total else 0
         if score and any(p.search(chunk.get("text", "")) for p in wanted):
             score += 0.75
-        if coverage >= MIN_COVERAGE and score >= MIN_SCORE:
+        if coverage >= min_coverage and score >= MIN_SCORE:
             scored.append((score, coverage, chunk))
     scored.sort(key=lambda s: s[0], reverse=True)
     return [dict(c, score=round(s, 2), coverage=round(cov, 2)) for s, cov, c in scored[:top_k]]
@@ -186,13 +268,18 @@ def _dummy_answer(question: str, sources: list[dict], fallback: str) -> tuple[st
         for pos, sentence in enumerate(_split_sentences(src["text"])):
             if len(sentence) < 12:
                 continue
-            norm = _normalize(sentence)
-            score = sum(1 for g in groups if any(t in norm for t in g))
+            words = _words(sentence)
+            score = sum(1 for g in groups if any(_hit(t, words) for t in g))
             # "kada" wants the sentence with the year, "gde" the one with the address
             score += 2 if any(p.search(sentence) for p in wanted) else 0
             if score:
                 candidates.append((score, pos, sentence))
         if not candidates:
+            # A list under a matching heading ("Sta poneti" -> "- Laptop...") has no matching
+            # sentence: the list itself is the answer
+            if any(any(_hit(t, _words(src.get("heading", ""))) for t in g) for g in groups):
+                lines = _split_sentences(src["text"])[:3]
+                return " ".join(lines), [src["id"]]
             continue
         candidates.sort(key=lambda c: c[0], reverse=True)  # stable: earlier sentence wins ties
         best = candidates[0][0]
@@ -223,10 +310,10 @@ def _parse_gemma(raw: str) -> tuple[str, list[int]]:
             data = json.loads(text[start:end])
             ids = [int(i) for i in data.get("source_ids", []) if str(i).isdigit()]
             if str(data.get("answer", "")).strip():
-                return str(data["answer"]).strip(), ids
+                return str(data["answer"]).strip()[:MAX_ANSWER_CHARS], ids
         except (json.JSONDecodeError, ValueError, TypeError):
             pass
-    return text, []  # Gemma ignored the JSON format: use its plain text
+    return text[:MAX_ANSWER_CHARS], []  # Gemma ignored the JSON format: use its plain text
 
 
 def _contact_fallback(knowledge: dict) -> str:
@@ -247,30 +334,57 @@ def answer_question(question: str, knowledge: dict, history: list[dict] | None =
 
     # Follow-up questions ("a koliko to košta?") also search with the previous question
     last_q = str((history or [{}])[-1].get("question", "")) if history else ""
-    sources = select_chunks(question, chunks) or (select_chunks(f"{last_q} {question}", chunks) if last_q else [])
+
+    def retrieve(**kw):
+        return select_chunks(question, chunks, **kw) or (select_chunks(f"{last_q} {question}", chunks, **kw) if last_q else [])
+
+    sources = retrieve()  # strict: extractive answer + sources shown to the visitor
     fallback = _contact_fallback(knowledge)
 
     if use_gemma is None:
         use_gemma = bool(os.getenv("GEMMA_BASE_URL"))
-    mode = "dummy"
-    if use_gemma and sources:
+    # What Gemma reads: the best matching chunks (a small Gemma answers much better from a few
+    # relevant paragraphs than from the whole site). Only when nothing matches: the whole site if
+    # it is small, or the intro for a question made only of question words ("ko ste vi?").
+    gemma_sources = retrieve(top_k=GEMMA_TOP_K, min_coverage=GEMMA_MIN_COVERAGE)
+    if not gemma_sources:
+        if sum(len(c.get("text", "")) for c in chunks) <= FULL_CONTEXT_CHARS:
+            gemma_sources = chunks
+        elif not question_groups(question):
+            gemma_sources = chunks[:TOP_K]
+    gemma_sources = sorted(gemma_sources, key=lambda c: c["id"])  # page order reads naturally
+
+    mode, reason = "dummy", "no GEMMA_BASE_URL" if not use_gemma else "no matching text"
+    if use_gemma and gemma_sources:
         try:
             from ai.utils.gemma_client import call_kaggle_gemma
             org = knowledge.get("title", "").split("|")[-1].strip() or "the organization"
-            user_prompt = (f"SOURCES:\n{_format_sources(sources)}\n\n"
+            # The question goes first AND last: a long prompt cut by the model server keeps it
+            user_prompt = (f"VISITOR QUESTION: {question}\n\n"
+                           f"SOURCES:\n{_format_sources(gemma_sources)}\n\n"
                            + (f"CONVERSATION SO FAR:\n{_format_history(history)}\n\n" if history else "")
-                           + f"VISITOR QUESTION: {question}")
-            answer, used_ids = _parse_gemma(call_kaggle_gemma(CHATBOT_SYSTEM_PROMPT.format(org_name=org), user_prompt))
-            mode = "gemma"
-        except Exception as e:  # Gemma down or slow: still answer from the sources
-            print(f"Gemma failed, using dummy answer: {e}")
+                           + f"Answer this VISITOR QUESTION from the SOURCES above: {question}")
+            raw = call_kaggle_gemma(CHATBOT_SYSTEM_PROMPT.format(org_name=org), user_prompt,
+                                    timeout=GEMMA_TIMEOUT_S)
+            answer, used_ids = _parse_gemma(raw)
+            mode, reason = "gemma", "ok"
+            # Gemma gave up although the text matches the question: the extractive answer is better
+            if (not answer.strip() or NO_ANSWER_RE.search(answer)) and sources:
+                answer, used_ids = _dummy_answer(question, sources, fallback)
+                mode, reason = "dummy", f"gemma said no answer: {raw!r:.200}"
+        except Exception as e:  # Gemma down or slower than GEMMA_TIMEOUT_S: still answer from the sources
             answer, used_ids = _dummy_answer(question, sources, fallback)
+            reason = f"gemma failed: {e}"
     else:
         answer, used_ids = _dummy_answer(question, sources, fallback)
 
-    used = [s for s in sources if s["id"] in used_ids]
-    if not used and mode == "gemma":
-        used = sources  # Gemma answered but did not list ids: show what it was given
+    pool = gemma_sources if mode == "gemma" else sources
+    used = [s for s in pool if s["id"] in used_ids]
+    if not used and mode == "gemma" and not NO_ANSWER_RE.search(answer):
+        used = sources  # Gemma answered but did not list ids: show the best matches
+    # One line per question in the AI service console: why the bot answered the way it did
+    print(f"[chatbot] q={question[:80]!r} chunks={len(chunks)} chars={sum(len(c.get('text', '')) for c in chunks)} matched={[c['id'] for c in sources]} "
+          f"to_gemma={len(gemma_sources) if use_gemma else 0} mode={mode} ({reason})", flush=True)
     return {
         "answer": answer,
         "sources": [{"id": s["id"], "heading": s["heading"], "url": s["url"]} for s in used],

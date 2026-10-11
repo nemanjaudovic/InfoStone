@@ -16,6 +16,10 @@
     root.insertBefore(log, form || null);
   }
 
+  // Naslov iz baze (u styledHtml je ostao naslov iz trenutka primene stila)
+  const titleEl = root.querySelector('.infostone-title');
+  if (titleEl && config.title) titleEl.textContent = config.title;
+
   const MAX_HISTORY = 3;
   const history = [];
   const GREETING = (config.schema && config.schema.greeting) ||
@@ -102,6 +106,7 @@
       const text =
         err.status === 429 ? 'Previse pitanja u kratkom roku, probaj ponovo za minut.'
         : err.status === 409 ? 'Chatbot jos nije podesen. Pokusaj kasnije.'
+        : !err.status || err.status >= 500 ? 'Bot trenutno ne moze da odgovori, pokusaj ponovo za minut.'
         : err.message || 'Doslo je do greske, pokusaj ponovo.';
       addMessage(text, 'bot', 'infostone-msg-error');
     } finally {

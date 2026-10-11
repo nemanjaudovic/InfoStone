@@ -133,6 +133,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
 
 // Izmena (ekran /components/:id/edit). Body: bilo sta od { title, schema, sensitive, promptEnabled }
 // Promena polja resetuje styledHtml (stari Gemma spoj vise ne odgovara HTML-u).
+// Izuzetak: chatbot (schema je samo pozdrav, ne menja HTML), pa izmena ne brise CSS stil.
 // Ako se sensitive ukljuci prvi put, u odgovoru stize `password` (jednom).
 router.put('/:id', asyncHandler(async (req, res) => {
   const component = await loadOwned(req);
@@ -143,7 +144,7 @@ router.put('/:id', asyncHandler(async (req, res) => {
     if (component.type === 'form') validateFormSchema(req.body.schema);
     component.schema = req.body.schema;
     component.markModified('schema');
-    component.styledHtml = '';
+    if (component.type !== 'chatbot') component.styledHtml = '';
   }
   if (req.body.promptEnabled !== undefined && !['form', 'search', 'chatbot'].includes(component.type)) {
     component.promptEnabled = !!req.body.promptEnabled;
