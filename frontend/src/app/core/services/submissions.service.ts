@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { Submission } from '../models/submission.model';
+import { AskResponse, Submission } from '../models/submission.model';
 
 @Injectable({ providedIn: 'root' })
 export class SubmissionsService {
@@ -12,6 +12,11 @@ export class SubmissionsService {
 
   list(componentId: string): Observable<Submission[]> {
     return this.http.get<Submission[]>(`${this.base}/${componentId}`);
+  }
+
+  // Chatbox ispod tabele: prompt + redovi -> Gemma ocenjuje svaki red
+  ask(componentId: string, prompt: string, maxRows: number): Observable<AskResponse> {
+    return this.http.post<AskResponse>(`${this.base}/${componentId}/ask`, { prompt, maxRows });
   }
 
   export(componentId: string, format: 'csv' | 'json'): Observable<Blob> {

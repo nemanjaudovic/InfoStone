@@ -178,3 +178,38 @@ button:disabled { opacity: 0.6; cursor: default; }
 }
 .gdg-alert-error { color: #ff8a80; font-size: 13px; font-weight: 500; }
 [role="alert"] { color: #ff8a80; font-size: 13px; font-weight: 500; }
+
+/* ---------- Tabele (Gemma ih mapira na InfoStone tabelu) ---------- */
+.gdg-table-card {
+  background: var(--gdg-card);
+  border: 1px solid var(--gdg-border);
+  border-radius: var(--gdg-radius);
+  overflow: auto;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+}
+.gdg-table,
+table { width: 100%; border-collapse: collapse; font-size: 14px; color: var(--gdg-text); }
+.gdg-th,
+th {
+  text-align: left;
+  padding: 12px 16px;
+  background: var(--gdg-bg-2);
+  color: var(--gdg-muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--gdg-border);
+}
+.gdg-td,
+td { padding: 12px 16px; border-bottom: 1px solid var(--gdg-border); color: var(--gdg-text); }
+tbody tr:hover td { background: rgba(66, 133, 244, 0.08); }
+input[type="search"] {
+  padding: 11px 14px;
+  font: inherit;
+  color: var(--gdg-text);
+  background: var(--gdg-bg-2);
+  border: 1px solid var(--gdg-border);
+  border-radius: 10px;
+  outline: none;
+}

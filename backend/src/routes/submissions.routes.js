@@ -7,6 +7,9 @@ const { requireAuth } = require('../middleware/auth');
 const { formUpload } = require('../middleware/upload');
 const { asyncHandler, HttpError } = require('../utils/http');
 const { getCollection } = require('../services/dynamicCollections');
+const { promptLimiter } = require('../middleware/rateLimit');
+const aiClient = require('../services/aiClient');
+const { config } = require('../config/env');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -166,6 +169,106 @@ router.get('/submissions/:componentId/export', requireAuth, asyncHandler(async (
   res.type('text/csv; charset=utf-8');
   // BOM da Excel ispravno prikaze nasa slova
   res.send('﻿' + [header, ...lines].map((l) => l.map(cell).join(',')).join('\r\n'));
+}));
+
+// ============================================================================
+// Tabela + chatbox (stranica Table u dashboard-u)
+// Prompt organizatora + redovi tabele -> Gemma (ai/: /api/screen-candidates-batch)
+// -> svaki red dobija ocenu { match_score, meets_criteria, summary, key_highlights }
+// ============================================================================
+
+const ASK_DEFAULT_ROWS = 10;
+const ASK_MAX_ROWS = 30; // Gemma obradjuje red po red (~10-20s po redu) -> ogranicenje zbog timeout-a
+
+// Jedinstvene labele kolona: q1 -> "Ime"; duplikat labele -> "Ime (q3)"
+function fieldLabels(fields) {
+  const seen = new Set();
+  const labels = {};
+  for (const f of fields) {
+    let label = String(f.label || f.name).trim() || f.name;
+    if (seen.has(label)) label = `${label} (${f.name})`;
+    seen.add(label);
+    labels[f.name] = label;
+  }
+  return labels;
+}
+
+/**
+ * Red iz Mongo-a -> kandidat za ai/ screener:
+ *  - data: kljucevi su LABELE (Gemma vidi "Fakultet: ETF", ne "q3: ETF")
+ *  - files: prvi PDF iz file polja kao field "cv" + storedName (tako ga ai/ pronalazi u uploads/)
+ */
+function toCandidate(row, fields, labels) {
+  const data = {};
+  for (const f of fields) {
+    if (f.type === 'file') continue;
+    const v = row.data ? row.data[f.name] : undefined;
+    data[labels[f.name]] = Array.isArray(v) ? v.join(', ') : v ?? '';
+  }
+  const fileFieldNames = fields.filter((f) => f.type === 'file').map((f) => f.name);
+  const pdf = (row.files || []).find((x) => fileFieldNames.includes(x.field) && /\.pdf$/i.test(x.storedName || ''));
+  return {
+    _id: String(row._id),
+    submittedAt: row.submittedAt instanceof Date ? row.submittedAt.toISOString() : row.submittedAt,
+    data,
+    files: pdf ? [{ field: 'cv', filename: pdf.storedName, path: pdf.path, size: pdf.size }] : [],
+  };
+}
+
+// Body: { prompt, maxRows? } -> { prompt, total, processed, matched, results: [{ submission, evaluation }] }
+router.post('/submissions/:componentId/ask', requireAuth, promptLimiter, asyncHandler(async (req, res) => {
+  const component = await loadOwnedForm(req);
+  if (component.type !== 'form') throw new HttpError(400, 'Chatbox radi samo nad tabelama formi');
+
+  const prompt = String(req.body.prompt || '').trim();
+  if (!prompt) throw new HttpError(400, 'Upisi pitanje / kriterijum');
+  if (prompt.length > 500) throw new HttpError(400, 'Prompt moze imati najvise 500 karaktera');
+  const maxRows = Math.min(Math.max(Number(req.body.maxRows) || ASK_DEFAULT_ROWS, 1), ASK_MAX_ROWS);
+
+  const all = await listSubmissions(component); // najnovije prve
+  const rows = all.slice(0, maxRows);
+  if (!rows.length) {
+    return res.json({ prompt, total: 0, processed: 0, matched: 0, results: [] });
+  }
+
+  const fields = (component.schema && component.schema.fields) || [];
+  const labels = fieldLabels(fields);
+  const candidates = rows.map((r) => toCandidate(r, fields, labels));
+
+  let result;
+  const started = Date.now();
+  try {
+    result = await aiClient.screenCandidates(candidates, prompt, config.uploadDir);
+  } catch (err) {
+    const timedOut = err.name === 'TimeoutError' || err.name === 'AbortError';
+    throw new HttpError(timedOut ? 504 : 502, timedOut
+      ? 'Gemma nije stigla da obradi sve redove na vreme. Probaj sa manje redova.'
+      : `AI servis nije uspeo: ${err.message}`);
+  }
+  console.log(`[ask] ${rows.length} redova obradjeno za ${((Date.now() - started) / 1000).toFixed(1)}s`);
+
+  // Spoji ocene nazad sa originalnim redovima (po _id)
+  const byId = new Map(rows.map((r) => [String(r._id), r]));
+  const results = ((result && result.results) || [])
+    .filter((c) => byId.has(String(c._id)))
+    .map((c) => ({
+      submission: byId.get(String(c._id)),
+      evaluation: {
+        matchScore: Number(c.evaluation && c.evaluation.match_score) || 0,
+        meetsCriteria: !!(c.evaluation && c.evaluation.meets_criteria),
+        summary: (c.evaluation && c.evaluation.summary) || '',
+        keyHighlights: (c.evaluation && c.evaluation.key_highlights) || [],
+      },
+    }))
+    .sort((a, b) => b.evaluation.matchScore - a.evaluation.matchScore);
+
+  res.json({
+    prompt,
+    total: all.length,
+    processed: rows.length,
+    matched: results.filter((r) => r.evaluation.meetsCriteria).length,
+    results,
+  });
 }));
 
 router.buildSubmission = buildSubmission; // izlozeno za testiranje

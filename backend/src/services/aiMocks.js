@@ -7,6 +7,27 @@ module.exports = {
     applied_classes: ['mock-site-button'],
     error: null,
   }),
+  // Mock za ai/main.py POST /api/screen-candidates-batch: skor = koliko reci iz prompta postoji u redu
+  '/api/screen-candidates-batch': (body) => {
+    const candidates = JSON.parse(body.candidates_json || '[]');
+    const words = String(body.criteria || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 2);
+    const results = candidates.map((c) => {
+      const text = JSON.stringify(c.data || {}).toLowerCase();
+      const hits = words.filter((w) => text.includes(w));
+      const score = words.length ? Math.round((hits.length / words.length) * 100) : 0;
+      return {
+        ...c,
+        evaluation: {
+          match_score: score,
+          meets_criteria: score >= 50,
+          summary: hits.length ? `Mock: u redu postoji ${hits.join(', ')}.` : 'Mock: nijedna rec iz prompta nije pronadjena.',
+          key_highlights: hits,
+        },
+      };
+    });
+    results.sort((a, b) => b.evaluation.match_score - a.evaluation.match_score);
+    return { status: 'success', total_screened: results.length, results };
+  },
   '/interpret-prompt': {
     mongo_query: { 'data.city': 'Beograd' },
     mongo_projection: null,

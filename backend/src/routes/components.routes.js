@@ -51,6 +51,31 @@ function validateFormSchema(schema) {
   }
 }
 
+// Tableview iz rezultata pretrage tabele (stranica Table):
+// schema = { sourceComponentId, rowIds, columns, prompt } -> proverava vlasnistvo i dopunjuje columnLabels
+const MAX_TABLE_ROWS = 500;
+async function normalizeTableSchema(schema, owner) {
+  if (!schema || !mongoose.isValidObjectId(schema.sourceComponentId)) {
+    throw new HttpError(400, 'Tabela mora imati izvornu formu (sourceComponentId)');
+  }
+  const source = await Component.findOne({ _id: schema.sourceComponentId, owner, type: 'form' }).lean();
+  if (!source) throw new HttpError(404, 'Izvorna forma ne postoji');
+
+  const fields = (source.schema && source.schema.fields) || [];
+  const columns = (Array.isArray(schema.columns) ? schema.columns : []).filter((c) => fields.some((f) => f.name === c));
+  if (!columns.length) throw new HttpError(400, 'Izaberi bar jednu kolonu');
+  const rowIds = (Array.isArray(schema.rowIds) ? schema.rowIds : []).map(String).filter((id) => mongoose.isValidObjectId(id));
+  if (rowIds.length > MAX_TABLE_ROWS) throw new HttpError(400, `Najvise ${MAX_TABLE_ROWS} redova`);
+
+  return {
+    sourceComponentId: String(source._id),
+    columns,
+    columnLabels: columns.map((c) => { const f = fields.find((x) => x.name === c); return f.label || f.name; }),
+    rowIds,
+    prompt: String(schema.prompt || '').slice(0, 500),
+  };
+}
+
 // Sifra za sensitive komponentu: vraca se developeru SAMO jednom
 const generatePassword = () => crypto.randomBytes(4).toString('hex');
 
@@ -63,11 +88,13 @@ router.get('/', asyncHandler(async (req, res) => {
 
 // Body: { type, title, schema, sensitive, promptEnabled } -> 201 { component, password? }
 router.post('/', asyncHandler(async (req, res) => {
-  const { type, title = '', schema = {}, sensitive = false } = req.body;
+  const { type, title = '', sensitive = false } = req.body;
+  let { schema = {} } = req.body;
   if (!TYPES.includes(type)) throw new HttpError(400, `Tip mora biti jedan od: ${TYPES.join(', ')}`);
   if (type === 'form') validateFormSchema(schema);
 
   const owner = req.user.username;
+  if (type === 'tableview') schema = await normalizeTableSchema(schema, owner);
   // Prompt box pravila (guide §3.4): form nikad, search uvek
   const promptEnabled = type === 'search' ? true : type === 'form' ? false : !!req.body.promptEnabled;
 

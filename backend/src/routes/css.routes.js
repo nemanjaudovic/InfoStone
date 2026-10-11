@@ -15,7 +15,7 @@ const CssSource = require('../models/CssSource');
 const { requireAuth } = require('../middleware/auth');
 const { cssUpload } = require('../middleware/upload');
 const { asyncHandler, HttpError } = require('../utils/http');
-const { rawMarkup } = require('../embed/templates');
+const { rawMarkup, extractClassMap } = require('../embed/templates');
 const aiClient = require('../services/aiClient');
 
 router.use(requireAuth);
@@ -66,6 +66,30 @@ router.post('/apply', asyncHandler(async (req, res) => {
   ]);
   if (!component) throw new HttpError(404, 'Komponenta ne postoji');
   if (!source) throw new HttpError(404, 'CSS ne postoji');
+
+  // Tabela: Gemmi ide uzorak (2 reda), a cuva se samo CSS sajta + mapa klasa.
+  // Pravi redovi se citaju pri svakom prikazu iframe-a (embed.routes.js).
+  if (component.type === 'tableview') {
+    let tableResult;
+    try {
+      tableResult = await aiClient.styleComponent(rawMarkup(component), source.rawCss);
+    } catch (err) {
+      throw new HttpError(502, `AI servis nije uspeo: ${err.message}`);
+    }
+    const classMap = extractClassMap((tableResult && tableResult.styled_html) || '');
+    component.styledHtml = `<style>\n${cssForStyleTag(source.rawCss)}\n</style>\n`;
+    component.schema = { ...(component.schema || {}), classMap };
+    component.markModified('schema');
+    component.cssSourceId = source._id;
+    await component.save();
+    const usedFallback = Object.keys(classMap).length === 0;
+    return res.json({
+      styledHtml: component.styledHtml,
+      notes: usedFallback ? 'Gemma nije dodala klase sajta; primenjen je samo CSS sajta.' : '',
+      appliedClasses: (tableResult && tableResult.applied_classes) || [],
+      usedFallback,
+    });
+  }
 
   const original = rawMarkup(component);
   let result;
