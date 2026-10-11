@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { FaqAnswer, FeedbackReport, MarketingChannel, MarketingResponse } from '../models/ai.model';
+import { ChatbotKnowledge, ChatbotSource, FeedbackReport, MarketingChannel, MarketingResponse } from '../models/ai.model';
 import { DbTable, QueryRequest, QueryResult, TableRowsResponse } from '../models/dbtools.model';
 
 @Injectable({ providedIn: 'root' })
@@ -19,8 +19,20 @@ export class ToolsService {
     return this.http.post<FeedbackReport>(`${this.base}/feedback/${componentId}`, {});
   }
 
-  faqChat(faq: string, schedule: string, question: string): Observable<FaqAnswer> {
-    return this.http.post<FaqAnswer>(`${this.base}/faq-chat`, { faq, schedule, question });
+  // --- Chatbot: znanje iz sajta (url), teksta ili fajla (.html/.md/.txt); staro se zamenjuje ---
+
+  buildChatbotKnowledge(componentId: string, source: ChatbotSource): Observable<ChatbotKnowledge> {
+    const url = `${this.base}/chatbot/${componentId}/knowledge`;
+    if ('file' in source) {
+      const body = new FormData();
+      body.append('file', source.file);
+      return this.http.post<ChatbotKnowledge>(url, body);
+    }
+    return this.http.post<ChatbotKnowledge>(url, source);
+  }
+
+  chatbotKnowledge(componentId: string): Observable<ChatbotKnowledge> {
+    return this.http.get<ChatbotKnowledge>(`${this.base}/chatbot/${componentId}/knowledge`);
   }
 
   // --- Dev alati: pregled tabela i upitna konzola ---

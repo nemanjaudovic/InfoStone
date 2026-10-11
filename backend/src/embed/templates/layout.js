@@ -6,13 +6,14 @@ const escapeHtml = (s = '') =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Prompt box pravila (guide §3.4): form NIKAD, ostali samo paid; search ga uvek ima (paid)
-// PRIVREMENO (dogovor tima): search radi i za free plan, jer jos nema nacina da se postane paid.
-// Za povratak na guide §3.4 postaviti SEARCH_FREE_FOR_ALL = false.
+// PRIVREMENO (dogovor tima): search i chatbot rade i za free plan, jer jos nema nacina da se
+// postane paid. Za povratak na guide §3.4 postaviti SEARCH_FREE_FOR_ALL = false.
 // Isto pravilo koristi i /api/prompt (routes/prompt.routes.js).
 const SEARCH_FREE_FOR_ALL = true;
+const ALWAYS_PROMPT_TYPES = ['search', 'chatbot']; // polje za pitanje JE komponenta
 const showPromptBox = (component, plan) => {
   if (component.type === 'form') return false;
-  if (component.type === 'search') return SEARCH_FREE_FOR_ALL || plan === 'paid';
+  if (ALWAYS_PROMPT_TYPES.includes(component.type)) return SEARCH_FREE_FOR_ALL || plan === 'paid';
   return plan === 'paid' && component.promptEnabled;
 };
 
@@ -32,8 +33,13 @@ const BASE_FORM_CSS = `
 :where(body.infostone-type-form) { margin: 0; padding: 16px; background: #f1f3f4; color: #202124;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
 :where(.infostone-form) { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
-:where(.infostone-header), :where(.infostone-question) { background: #fff; color: #202124; border: 1px solid #dadce0;
-  border-radius: 8px; padding: 20px 24px; } /* sopstvena boja teksta: citljivo i na tamnom sajtu */
+:where(.infostone-header), :where(.infostone-question) { border: 1px solid rgba(127, 127, 127, .35);
+  border-radius: 8px; padding: 20px 24px; }
+/* Bele kartice (Google Forms) samo bez CSS-a sajta; sa CSS-om kartica preuzima boje sajta
+   (providna pozadina, tekst sajta), a klasa sajta (npr. .gdg-card) je uvek jaca od ovoga */
+:where(body:not(.infostone-styled)) :where(.infostone-header, .infostone-question) { background: #fff; color: #202124;
+  border-color: #dadce0; }
+:where(body.infostone-styled) :where(.infostone-header, .infostone-question) { background: rgba(127, 127, 127, .08); }
 :where(.infostone-header) { border-top: 8px solid #4285f4; }
 :where(.infostone-title) { margin: 0; font-size: 28px; font-weight: 600; }
 :where(.infostone-note) { margin: 10px 0 0; font-size: 13px; opacity: .75; }
@@ -58,6 +64,30 @@ const BASE_FORM_CSS = `
 :where(.infostone-message-error) { background: #fce8e6; color: #c5221f; }
 `;
 
+// Osnovni izgled tabele; CSS sajta (ako je primenjen) uvek ima prednost
+const BASE_TABLE_CSS = `
+:where(body.infostone-type-tableview) { margin: 0; padding: 16px; background: #f1f3f4; color: #202124;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+:where(.infostone-tableview) { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+:where(.infostone-table-header) { background: #fff; color: #202124; border: 1px solid #dadce0; border-top: 8px solid #4285f4;
+  border-radius: 8px; padding: 18px 22px; }
+:where(.infostone-title) { margin: 0; font-size: 24px; font-weight: 600; }
+:where(.infostone-note) { margin: 6px 0 0; font-size: 13px; opacity: .7; }
+:where(.infostone-table-search) { box-sizing: border-box; width: 100%; max-width: 320px; padding: 9px 12px; font: inherit;
+  border: 1px solid #dadce0; border-radius: 6px; background: #fff; color: inherit; }
+:where(.infostone-table-wrap) { overflow: auto; border-radius: 8px; }
+:where(.infostone-table) { width: 100%; border-collapse: collapse; font-size: 14px; }
+:where(.infostone-th) { text-align: left; padding: 10px 14px; font-weight: 600; white-space: nowrap;
+  border-bottom: 1px solid #dadce0; cursor: pointer; user-select: none; }
+/* Bele povrsine samo kad CSS sajta NIJE primenjen; inace tabela preuzima boje sajta */
+:where(body:not(.infostone-styled)) :where(.infostone-table-wrap) { background: #fff; border: 1px solid #dadce0; }
+:where(body:not(.infostone-styled)) :where(.infostone-table) { color: #202124; }
+:where(body:not(.infostone-styled)) :where(.infostone-th) { background: #f8f9fa; }
+:where(.infostone-td) { padding: 9px 14px; border-bottom: 1px solid #eceff1; vertical-align: top; }
+:where(tbody .infostone-tr:hover) { background: rgba(66, 133, 244, .06); }
+:where(.infostone-empty) { margin: 0; padding: 16px; text-align: center; opacity: .7; }
+`;
+
 function layout(component, { plan, markup, script, extraHead = '' }) {
   // Config koji citaju skripte u /embed-assets (bez osetljivih polja!)
   const cfg = {
@@ -76,9 +106,10 @@ function layout(component, { plan, markup, script, extraHead = '' }) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(component.title)}</title>
   ${component.type === 'form' ? `<style>${BASE_FORM_CSS}</style>` : ''}
+  ${component.type === 'tableview' ? `<style>${BASE_TABLE_CSS}</style>` : ''}
   ${extraHead}
 </head>
-<body class="infostone-embed infostone-type-${component.type}">
+<body class="infostone-embed infostone-type-${component.type}${component.styledHtml ? ' infostone-styled' : ''}">
   ${markup}
   ${watermark}
   <style>

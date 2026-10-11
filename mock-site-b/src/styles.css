@@ -175,3 +175,34 @@ button:disabled { opacity: 0.55; cursor: default; }
 }
 .tm-alert-error { color: var(--tm-error); font-size: 13px; font-weight: 700; font-style: italic; }
 [role="alert"] { color: var(--tm-error); font-size: 13px; font-weight: 700; font-style: italic; }
+
+/* ---------- Tabele (Gemma ih mapira na InfoStone tabelu) ---------- */
+.tm-table-card {
+  background: var(--tm-card);
+  border: 1px solid var(--tm-line);
+  box-shadow: 6px 6px 0 rgba(47, 36, 24, 0.08);
+  overflow: auto;
+}
+.tm-table,
+table { width: 100%; border-collapse: collapse; font-size: 15px; color: var(--tm-ink); }
+.tm-th,
+th {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 2px solid var(--tm-ink);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--tm-muted);
+}
+.tm-td,
+td { padding: 10px 12px; border-bottom: 1px dotted var(--tm-line); }
+input[type="search"] {
+  padding: 8px 2px;
+  font: inherit;
+  color: var(--tm-ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid var(--tm-line);
+  outline: none;
+}

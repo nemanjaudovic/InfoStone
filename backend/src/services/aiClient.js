@@ -11,6 +11,8 @@ const mock = (endpoint, body) => (typeof mocks[endpoint] === 'function' ? mocks[
 
 // Gemma (Kaggle tunel) zna da bude spora -> 5 min pa odustajemo
 const AI_TIMEOUT_MS = 300000;
+// Chatbot: AI servis sam odustaje od Gemme posle ~60s (CHATBOT_GEMMA_TIMEOUT) i vraca odgovor iz teksta
+const CHATBOT_TIMEOUT_MS = 120000;
 
 async function post(endpoint, body) {
   if (config.mockAi) return mock(endpoint, body);
@@ -47,6 +49,27 @@ async function postFile(endpoint, filePath, fields = {}) {
   return res.json();
 }
 
+// Multipart sa poljima i opcionim fajlom iz memorije (multer memoryStorage).
+// Greska nosi status i poruku FastAPI-ja (detail), da ruta moze da je prosledi korisniku.
+async function postMultipart(endpoint, fields, file = null, timeoutMs = AI_TIMEOUT_MS) {
+  if (config.mockAi) return mock(endpoint, { ...fields, file });
+  const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) form.append(k, typeof v === 'string' ? v : JSON.stringify(v));
+  if (file) form.append('file', new Blob([file.buffer]), file.originalname);
+  const res = await fetch(`${config.aiServiceUrl}${endpoint}`, {
+    method: 'POST',
+    body: form,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const err = new Error(typeof data.detail === 'string' ? data.detail : `AI servis ${endpoint}: HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
 module.exports = {
   // guide §7
   // Gemma dodaje klase sa sajta organizacije na HTML komponente (ai/main.py: POST /api/customize-css)
@@ -60,6 +83,26 @@ module.exports = {
   // Gemma preformulise upit, Tavily pretrazi, Gemma izabere i rangira top_k rezultata
   // -> { status, query, data: { total_found, matches: [{ title, location_or_domain, url, match_score, summary, key_details }] } }
   discover: (prompt, topK = 3) => postForm('/api/discover', { prompt, top_k: String(topK) }),
+
+  // Chatbot (ai/main.py -> ai/services/chatbot_service.py, ai/utils/site_extractor.py)
+  // Znanje iz sajta (url), nalepljenog teksta ili fajla (.html/.md/.txt)
+  // -> { status, knowledge: { title, description, source, chunks: [{ id, heading, url, text }], stats, warnings } }
+  chatbotKnowledge: ({ url = '', text = '' }, file = null) =>
+    postMultipart('/api/chatbot/knowledge', { url, text }, file),
+  // Odgovor na pitanje posetioca iz sacuvanog znanja; history = [{ question, answer }]
+  // -> { status, answer, sources: [{ id, heading, url }], mode: 'gemma' | 'dummy' }
+  chatbotAsk: (question, knowledge, history = []) =>
+    postMultipart('/api/chatbot/ask', { question, knowledge_json: knowledge, history_json: history }, null, CHATBOT_TIMEOUT_MS),
+
+  // Tabela + chatbox: Gemma ocenjuje svaki red prema promptu organizatora
+  // (ai/main.py: POST /api/screen-candidates-batch, Form polja)
+  // -> { status, total_screened, results: [ { ...red, evaluation: { match_score, meets_criteria, summary, key_highlights } } ] }
+  screenCandidates: (candidates, criteria, filesDirectory) =>
+    postForm('/api/screen-candidates-batch', {
+      candidates_json: JSON.stringify(candidates),
+      criteria,
+      files_directory: filesDirectory,
+    }),
 
   // Analiza CV-a
   analyzeCv: (filePath) => postFile('/analyze-cv', filePath),

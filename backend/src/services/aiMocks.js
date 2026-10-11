@@ -7,6 +7,27 @@ module.exports = {
     applied_classes: ['mock-site-button'],
     error: null,
   }),
+  // Mock za ai/main.py POST /api/screen-candidates-batch: skor = koliko reci iz prompta postoji u redu
+  '/api/screen-candidates-batch': (body) => {
+    const candidates = JSON.parse(body.candidates_json || '[]');
+    const words = String(body.criteria || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 2);
+    const results = candidates.map((c) => {
+      const text = JSON.stringify(c.data || {}).toLowerCase();
+      const hits = words.filter((w) => text.includes(w));
+      const score = words.length ? Math.round((hits.length / words.length) * 100) : 0;
+      return {
+        ...c,
+        evaluation: {
+          match_score: score,
+          meets_criteria: score >= 50,
+          summary: hits.length ? `Mock: u redu postoji ${hits.join(', ')}.` : 'Mock: nijedna rec iz prompta nije pronadjena.',
+          key_highlights: hits,
+        },
+      };
+    });
+    results.sort((a, b) => b.evaluation.match_score - a.evaluation.match_score);
+    return { status: 'success', total_screened: results.length, results };
+  },
   '/interpret-prompt': {
     mongo_query: { 'data.city': 'Beograd' },
     mongo_projection: null,
@@ -19,6 +40,33 @@ module.exports = {
       { title: 'Prostor A', url: 'https://example.com/a', snippet: 'Do 200 ljudi', relevance: 0.9 },
       { title: 'Prostor B', url: 'https://example.com/b', snippet: 'Centar grada', relevance: 0.7 },
     ],
+  },
+  // Mock za ai/main.py POST /api/chatbot/knowledge: isto znanje bez obzira na ulaz
+  '/api/chatbot/knowledge': (body) => ({
+    status: 'success',
+    knowledge: {
+      title: 'Mock: GDG Hackathon 2025',
+      description: '',
+      source: body.url || (body.file && body.file.originalname) || 'uploaded-text',
+      chunks: [
+        { id: 1, heading: 'Kada i gde', url: body.url || 'mock', text: 'Hakaton se odrzava 22-23. novembra 2025. u Tech Hub Dorcol, Cara Dusana 50, Beograd.' },
+        { id: 2, heading: 'Hrana i odmor', url: body.url || 'mock', text: 'Svi obroci su besplatni. Smestaj nije obezbedjen, ali sala za odmor je otvorena tokom noci.' },
+        { id: 3, heading: 'Kontakt', url: body.url || 'mock', text: 'Za sva pitanja pisite na hackathon@gdg-beograd.example.' },
+      ],
+      stats: { pages: 1, chunks: 3, chars: 230 },
+      warnings: ['Mock: MOCK_AI=true, sadrzaj nije stvarno procitan.'],
+    },
+  }),
+  // Mock za ai/main.py POST /api/chatbot/ask: vraca prvi deo znanja kao odgovor
+  '/api/chatbot/ask': (body) => {
+    const knowledge = typeof body.knowledge_json === 'string' ? JSON.parse(body.knowledge_json) : body.knowledge_json;
+    const first = (knowledge && knowledge.chunks && knowledge.chunks[0]) || null;
+    return {
+      status: 'success',
+      answer: first ? `Mock: ${first.text}` : 'Mock: nemam tu informaciju.',
+      sources: first ? [{ id: first.id, heading: first.heading, url: first.url }] : [],
+      mode: 'dummy',
+    };
   },
   // Mock za ai/main.py POST /api/discover (AI pretraga interneta)
   '/api/discover': (body) => ({

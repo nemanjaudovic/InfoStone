@@ -24,6 +24,10 @@ def evaluate_candidate(candidate_record: dict, pdf_path: str, organizer_criteria
 
     data = candidate_record.get("data", {})
 
+    # InfoStone forme imaju proizvoljna polja (labela -> vrednost), npr. "Fakultet": "ETF".
+    # Saljemo SVA polja reda, pored poznatih (first_name, gpa...) koja ostaju kao i ranije.
+    all_fields = "\n".join(f"    - {k}: {v}" for k, v in data.items()) or "    (no form fields)"
+
     # We pass the full context so Gemma can evaluate GPA, university, skills, or anything requested
     user_payload = f"""
     ORGANIZER'S CUSTOM FILTERING PROMPT:
@@ -35,6 +39,9 @@ def evaluate_candidate(candidate_record: dict, pdf_path: str, organizer_criteria
     - Faculty: {data.get('faculty')}
     - GPA: {data.get('gpa')}
     - Submitted At: {candidate_record.get('submittedAt')}
+
+    ALL FORM FIELDS (label: value):
+{all_fields}
 
     CANDIDATE RESUME TEXT (Extracted from PDF):
     {resume_text}

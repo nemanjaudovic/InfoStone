@@ -9,7 +9,7 @@ const { requireAuth } = require('../middleware/auth');
 const { asyncHandler, HttpError } = require('../utils/http');
 const { collectionName, nextIndex, getCollection } = require('../services/dynamicCollections');
 
-const TYPES = ['form', 'tableview', 'search', 'graph'];
+const TYPES = ['form', 'tableview', 'search', 'graph', 'chatbot'];
 const FIELD_TYPES = ['text', 'textarea', 'checkbox', 'radio', 'file'];
 const FIELD_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_]{0,40}$/;
 
@@ -51,6 +51,31 @@ function validateFormSchema(schema) {
   }
 }
 
+// Tableview iz rezultata pretrage tabele (stranica Table):
+// schema = { sourceComponentId, rowIds, columns, prompt } -> proverava vlasnistvo i dopunjuje columnLabels
+const MAX_TABLE_ROWS = 500;
+async function normalizeTableSchema(schema, owner) {
+  if (!schema || !mongoose.isValidObjectId(schema.sourceComponentId)) {
+    throw new HttpError(400, 'Tabela mora imati izvornu formu (sourceComponentId)');
+  }
+  const source = await Component.findOne({ _id: schema.sourceComponentId, owner, type: 'form' }).lean();
+  if (!source) throw new HttpError(404, 'Izvorna forma ne postoji');
+
+  const fields = (source.schema && source.schema.fields) || [];
+  const columns = (Array.isArray(schema.columns) ? schema.columns : []).filter((c) => fields.some((f) => f.name === c));
+  if (!columns.length) throw new HttpError(400, 'Izaberi bar jednu kolonu');
+  const rowIds = (Array.isArray(schema.rowIds) ? schema.rowIds : []).map(String).filter((id) => mongoose.isValidObjectId(id));
+  if (rowIds.length > MAX_TABLE_ROWS) throw new HttpError(400, `Najvise ${MAX_TABLE_ROWS} redova`);
+
+  return {
+    sourceComponentId: String(source._id),
+    columns,
+    columnLabels: columns.map((c) => { const f = fields.find((x) => x.name === c); return f.label || f.name; }),
+    rowIds,
+    prompt: String(schema.prompt || '').slice(0, 500),
+  };
+}
+
 // Sifra za sensitive komponentu: vraca se developeru SAMO jednom
 const generatePassword = () => crypto.randomBytes(4).toString('hex');
 
@@ -63,13 +88,15 @@ router.get('/', asyncHandler(async (req, res) => {
 
 // Body: { type, title, schema, sensitive, promptEnabled } -> 201 { component, password? }
 router.post('/', asyncHandler(async (req, res) => {
-  const { type, title = '', schema = {}, sensitive = false } = req.body;
+  const { type, title = '', sensitive = false } = req.body;
+  let { schema = {} } = req.body;
   if (!TYPES.includes(type)) throw new HttpError(400, `Tip mora biti jedan od: ${TYPES.join(', ')}`);
   if (type === 'form') validateFormSchema(schema);
 
   const owner = req.user.username;
-  // Prompt box pravila (guide §3.4): form nikad, search uvek
-  const promptEnabled = type === 'search' ? true : type === 'form' ? false : !!req.body.promptEnabled;
+  if (type === 'tableview') schema = await normalizeTableSchema(schema, owner);
+  // Prompt box pravila (guide §3.4): form nikad, search i chatbot uvek (polje za pitanje je cela komponenta)
+  const promptEnabled = type === 'search' || type === 'chatbot' ? true : type === 'form' ? false : !!req.body.promptEnabled;
 
   let password = null;
   let passwordHash = null;
@@ -106,6 +133,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
 
 // Izmena (ekran /components/:id/edit). Body: bilo sta od { title, schema, sensitive, promptEnabled }
 // Promena polja resetuje styledHtml (stari Gemma spoj vise ne odgovara HTML-u).
+// Izuzetak: chatbot (schema je samo pozdrav, ne menja HTML), pa izmena ne brise CSS stil.
 // Ako se sensitive ukljuci prvi put, u odgovoru stize `password` (jednom).
 router.put('/:id', asyncHandler(async (req, res) => {
   const component = await loadOwned(req);
@@ -116,9 +144,9 @@ router.put('/:id', asyncHandler(async (req, res) => {
     if (component.type === 'form') validateFormSchema(req.body.schema);
     component.schema = req.body.schema;
     component.markModified('schema');
-    component.styledHtml = '';
+    if (component.type !== 'chatbot') component.styledHtml = '';
   }
-  if (req.body.promptEnabled !== undefined && component.type !== 'form' && component.type !== 'search') {
+  if (req.body.promptEnabled !== undefined && !['form', 'search', 'chatbot'].includes(component.type)) {
     component.promptEnabled = !!req.body.promptEnabled;
   }
   if (req.body.sensitive !== undefined) {

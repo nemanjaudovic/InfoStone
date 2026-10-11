@@ -1,5 +1,5 @@
 // guide §5.2
-export type ComponentType = 'form' | 'tableview' | 'search' | 'graph';
+export type ComponentType = 'form' | 'tableview' | 'search' | 'graph' | 'chatbot';
 export type FormFieldType = 'text' | 'textarea' | 'checkbox' | 'radio' | 'file';
 
 export interface FormField {
@@ -19,10 +19,15 @@ export interface ComponentSchema {
   thankYouMessage?: string;        // form
   companies?: string[];            // form sa CV-em: kompanije za CV Coach & Matcher
   sourceComponentId?: string;      // tableview / graph: iz koje forme citaju
-  columns?: string[];              // tableview
+  columns?: string[];              // tableview: imena polja izvorne forme (q1, q2...)
+  columnLabels?: string[];         // tableview: nazivi kolona (popunjava backend)
+  rowIds?: string[];               // tableview: redovi iz rezultata pretrage (redosled = prikaz)
+  prompt?: string;                 // tableview: prompt kojim je dobijen rezultat
+  classMap?: Record<string, string[]>; // tableview: klase sajta koje je Gemma mapirala (popunjava backend)
   chartType?: 'pie' | 'bar' | 'line'; // graph
   groupBy?: string;                // graph
   maxResults?: number;             // search
+  greeting?: string;               // chatbot: prva poruka u chat prozoru
 }
 
 export interface InfoComponent {
