@@ -9,14 +9,30 @@ const mocks = require('./aiMocks');
 // Mock moze biti objekat ili funkcija koja dobija body zahteva
 const mock = (endpoint, body) => (typeof mocks[endpoint] === 'function' ? mocks[endpoint](body) : mocks[endpoint]);
 
+// Gemma (Kaggle tunel) zna da bude spora -> 2 min pa odustajemo
+const AI_TIMEOUT_MS = 120000;
+
 async function post(endpoint, body) {
   if (config.mockAi) return mock(endpoint, body);
   const res = await fetch(`${config.aiServiceUrl}${endpoint}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`AI servis ${endpoint}: HTTP ${res.status}`);
+  return res.json();
+}
+
+// FastAPI endpoint-i sa Form(...) parametrima traze application/x-www-form-urlencoded
+async function postForm(endpoint, fields) {
+  if (config.mockAi) return mock(endpoint, fields);
+  const res = await fetch(`${config.aiServiceUrl}${endpoint}`, {
+    method: 'POST',
+    body: new URLSearchParams(fields),
+    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`AI servis ${endpoint}: HTTP ${res.status} ${await res.text().catch(() => '')}`.trim());
   return res.json();
 }
 
@@ -33,9 +49,10 @@ async function postFile(endpoint, filePath, fields = {}) {
 
 module.exports = {
   // guide §7
-  // Spoj HTML-a komponente i CSS-a organizacije -> { styled_html, notes }
+  // Gemma dodaje klase sa sajta organizacije na HTML komponente (ai/main.py: POST /api/customize-css)
+  // -> { status, styled_html, applied_classes, error }
   styleComponent: (componentHtml, rawCss) =>
-    post('/generate-css', { component_html: componentHtml, raw_css: rawCss }),
+    postForm('/api/customize-css', { form_html: componentHtml, host_css: rawCss }),
   interpretPrompt: (componentType, prompt, availableFields, schemaHint = '') =>
     post('/interpret-prompt', { component_type: componentType, prompt, available_fields: availableFields, schema_hint: schemaHint }),
   webSearch: (prompt, maxResults = 5) => post('/web-search', { prompt, max_results: maxResults }),

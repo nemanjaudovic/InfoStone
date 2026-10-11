@@ -1,3 +1,180 @@
-/* Stil sajta organizacije. Ovaj CSS se u demou uploaduje u InfoStone (Gemma ga mapira na iframe). */
-body { margin: 0; font-family: system-ui, sans-serif; background: #0b1d3a; color: #e8f0ff; }
-a { color: #4285f4; }
+/* ============================================================
+   GDG Hackathon 2025 — stil sajta organizacije (mock sajt A)
+   Ovaj fajl se u demou uploaduje u InfoStone: Gemma mapira klase
+   (.gdg-*) na formu, a ceo CSS se ubacuje u iframe.
+   ============================================================ */
+
+:root {
+  --gdg-bg: #0b1d3a;
+  --gdg-bg-2: #102a52;
+  --gdg-card: #13305e;
+  --gdg-border: #24467d;
+  --gdg-text: #e8f0ff;
+  --gdg-muted: #9db4d9;
+  --gdg-blue: #4285f4;
+  --gdg-green: #34a853;
+  --gdg-yellow: #fbbc05;
+  --gdg-red: #ea4335;
+  --gdg-radius: 14px;
+  --gdg-font: 'Segoe UI', Roboto, system-ui, -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--gdg-font);
+  color: var(--gdg-text);
+  background:
+    radial-gradient(1200px 500px at 10% -10%, rgba(66, 133, 244, 0.25), transparent 60%),
+    radial-gradient(900px 400px at 110% 10%, rgba(52, 168, 83, 0.18), transparent 60%),
+    var(--gdg-bg);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+a { color: var(--gdg-blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ---------- Header sajta ---------- */
+header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 18px 32px;
+  border-bottom: 1px solid var(--gdg-border);
+  background: rgba(11, 29, 58, 0.85);
+  backdrop-filter: blur(6px);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+header a { color: var(--gdg-text); font-weight: 600; }
+header a:first-child {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin-right: auto;
+  background: linear-gradient(90deg, var(--gdg-blue), var(--gdg-green), var(--gdg-yellow), var(--gdg-red));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ---------- Sadrzaj stranica ---------- */
+app-home,
+app-prijava {
+  display: block;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 48px 20px 64px;
+}
+
+h1, h2, h3 { margin: 0 0 12px; line-height: 1.2; }
+h1 { font-size: 40px; font-weight: 800; letter-spacing: -0.02em; }
+h2 { font-size: 26px; font-weight: 700; }
+p { margin: 0 0 12px; color: var(--gdg-muted); }
+
+iframe { border-radius: var(--gdg-radius); }
+
+/* ---------- Komponente sajta (Gemma ih mapira na formu) ---------- */
+
+/* Kartica (sajt je koristi za sekcije; na formi: zaglavlje i svako pitanje) */
+.gdg-card {
+  background: var(--gdg-card);
+  border: 1px solid var(--gdg-border);
+  border-radius: var(--gdg-radius);
+  padding: 22px 26px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+  color: var(--gdg-text);
+}
+/* Istaknuta kartica (zaglavlje) */
+.gdg-card-accent { border-top: 6px solid var(--gdg-blue); }
+
+/* Naslovi */
+.gdg-title { color: var(--gdg-text); font-size: 28px; font-weight: 800; letter-spacing: -0.01em; margin: 0; }
+.gdg-subtitle { color: var(--gdg-text); font-size: 16px; font-weight: 600; }
+.gdg-muted { color: var(--gdg-muted); font-size: 13px; }
+.gdg-accent-text { color: var(--gdg-red); }
+
+/* Tekstualna polja */
+.gdg-input,
+input[type="text"],
+input[type="email"],
+input[type="password"],
+textarea {
+  width: 100%;
+  padding: 12px 14px;
+  font: inherit;
+  color: var(--gdg-text);
+  background: var(--gdg-bg-2);
+  border: 1px solid var(--gdg-border);
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.gdg-input:focus,
+input:focus,
+textarea:focus {
+  border-color: var(--gdg-blue);
+  box-shadow: 0 0 0 3px rgba(66, 133, 244, 0.3);
+}
+textarea { min-height: 100px; resize: vertical; }
+input::placeholder, textarea::placeholder { color: var(--gdg-muted); opacity: 0.7; }
+
+/* Opcije (checkbox / radio) */
+.gdg-option { display: flex; align-items: center; gap: 10px; color: var(--gdg-text); cursor: pointer; }
+input[type="checkbox"],
+input[type="radio"] { width: 18px; height: 18px; accent-color: var(--gdg-blue); }
+
+/* Zona za upload */
+.gdg-dropzone {
+  padding: 16px;
+  border: 1px dashed var(--gdg-border);
+  border-radius: 10px;
+  background: var(--gdg-bg-2);
+  color: var(--gdg-muted);
+}
+input[type="file"] { color: var(--gdg-muted); }
+input[type="file"]::file-selector-button {
+  margin-right: 12px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--gdg-blue);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Glavno dugme */
+.gdg-btn,
+button[type="submit"] {
+  padding: 13px 28px;
+  font: inherit;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(90deg, var(--gdg-blue), #5e97f6);
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(66, 133, 244, 0.35);
+  transition: transform 0.1s ease, box-shadow 0.15s ease;
+}
+.gdg-btn:hover,
+button[type="submit"]:hover { box-shadow: 0 10px 26px rgba(66, 133, 244, 0.5); }
+.gdg-btn:active,
+button[type="submit"]:active { transform: translateY(1px); }
+button:disabled { opacity: 0.6; cursor: default; }
+
+/* Obavestenja */
+.gdg-alert-success {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: rgba(52, 168, 83, 0.15);
+  border: 1px solid rgba(52, 168, 83, 0.5);
+  color: #b8f5c8;
+  font-weight: 600;
+}
+.gdg-alert-error { color: #ff8a80; font-size: 13px; font-weight: 500; }
+[role="alert"] { color: #ff8a80; font-size: 13px; font-weight: 500; }

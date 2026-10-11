@@ -9,5 +9,6 @@ connectDb()
   })
   .catch((err) => {
     console.error('MongoDB konekcija nije uspela:', err.message);
+    console.error('Proveri da li je MongoDB pokrenut i da li je MONGO_URI u backend/.env ispravan.');
     process.exit(1);
   });

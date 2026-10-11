@@ -9,8 +9,10 @@ export interface CssUploadResponse {
 }
 
 export interface CssApplyResponse {
-  styledHtml: string; // za preview; sacuvan je i u komponenti
-  notes?: string;
+  styledHtml: string;        // <style>CSS sajta</style> + HTML sa klasama koje je dodala Gemma
+  notes?: string;            // npr. kad Gemma pokvari strukturu pa se koristi originalni HTML
+  appliedClasses?: string[]; // klase sa sajta koje je Gemma primenila
+  usedFallback?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
