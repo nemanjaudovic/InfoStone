@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from ai.services.css_matcher import match_form_css
 from ai.services.cv_screener import screen_candidate_batch
+from ai.services.discovery_service import run_discovery_service
 
 # Initialize FastAPI App
 app = FastAPI(
@@ -80,6 +81,27 @@ async def screen_candidates_batch_endpoint(
             "status": "success",
             "total_screened": len(results),
             "results": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.post("/api/discover")
+async def discover_resources_endpoint(
+    prompt: str = Form(...),
+    top_k: int = Form(3)
+):
+    """
+    Discovers venues, sponsors, or speakers by executing multi-query
+    web searches and returning Gemma-ranked structured JSON.
+    """
+    try:
+        results = run_discovery_service(user_prompt=prompt, top_k=top_k)
+        return {
+            "status": "success",
+            "query": prompt,
+            "data": results
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
