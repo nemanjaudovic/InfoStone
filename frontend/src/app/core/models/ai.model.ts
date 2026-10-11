@@ -5,7 +5,9 @@ export interface SearchResult {
   title: string;
   url: string;
   snippet: string;
-  relevance?: number;
+  relevance?: number;  // 0-1
+  location?: string;   // search: lokacija / oblast (Gemma)
+  details?: string[];  // search: kljucni detalji (Gemma)
 }
 
 export interface PromptResponse {
