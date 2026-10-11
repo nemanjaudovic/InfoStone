@@ -28,6 +28,7 @@ def test_matcher():
     print(result.get("styled_html"))
     print("\n=== Applied Classes ===")
     print(result.get("applied_classes"))
+    print(result)
 
 
 if __name__ == "__main__":
