@@ -64,7 +64,7 @@ interface ChatbotResult {
         @switch (sourceKind) {
           @case ('url') {
             <input class="input" [(ngModel)]="sourceUrl" placeholder="https://your-event-site.com" />
-            <p class="hint">Reads up to 10 pages of the same site. Sites built with Angular/React may show no text — paste it instead.</p>
+            <p class="hint">Reads up to 10 pages of the same site. React/Angular sites are opened in a headless browser, so they take a few seconds longer.</p>
           }
           @case ('text') {
             <textarea class="input" rows="7" [(ngModel)]="sourceText"
