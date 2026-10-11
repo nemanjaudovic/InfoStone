@@ -1,54 +1,91 @@
 import { Component } from '@angular/core';
-import { RouterLink, RouterOutlet } from '@angular/router';
+import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive],
   template: `
     <header>
-      <a routerLink="/">GDG Hackathon 2026</a>
+      <a routerLink="/" class="brand">PARTY<i class="pulse"></i>RADAR</a>
       <nav>
-        <a routerLink="/" fragment="o-nama">O nama</a>
-        <a routerLink="/" fragment="agenda">Agenda</a>
-        <a routerLink="/" fragment="ucesnici">Učesnici</a>
-        <a routerLink="/" fragment="prostori">Prostori</a>
-        <a routerLink="/" fragment="sponzori">Sponzori</a>
-        <a routerLink="/" fragment="prijava" class="nav-cta">Prijavi se</a>
+        <a routerLink="/" routerLinkActive="on" [routerLinkActiveOptions]="{ exact: true }">Početna</a>
+        <a routerLink="/tabela" routerLinkActive="on">Tabela</a>
       </nav>
     </header>
     <router-outlet />
-    <footer class="site-footer">
-      <div class="foot-cols">
-        <div>
-          <strong>GDG Belgrade</strong>
-          <span>Google Developer Group zajednica u Beogradu. Meetup-i, radionice i hakatoni od 2014.</span>
-        </div>
-        <div>
-          <strong>Kontakt</strong>
-          <span>hackathon&#64;gdgbelgrade.rs</span>
-          <span>Hala 3, Beogradski sajam</span>
-        </div>
-        <div>
-          <strong>Prati nas</strong>
-          <span>LinkedIn · Instagram · YouTube</span>
-        </div>
-      </div>
-      <p class="foot-copy">© 2026 GDG Belgrade · Kodeks ponašanja · Privatnost</p>
+    <footer>
+      <span>© 2026 PARTY RADAR · nađi žurku po svom ukusu</span>
+      <span class="sep">·</span>
+      <span>techno · house · dnb · sve</span>
     </footer>
   `,
   styles: [
     `
-      nav { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
-      nav a { font-size: 14px; opacity: 0.85; }
-      /* GDG CSS boji "prvi link u header-u" gradijentom (logo) — ne i prvi link menija */
-      nav a:first-child { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--gdg-text); font-size: 14px; font-weight: 600; margin-right: 0; }
-      .nav-cta { padding: 8px 16px; border-radius: 999px; background: var(--gdg-blue); color: #fff !important; opacity: 1 !important; }
-      .site-footer { border-top: 1px solid var(--gdg-border); margin-top: 40px; padding: 36px 32px 24px; background: rgba(11, 29, 58, 0.6); }
-      .foot-cols { max-width: 1080px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 24px; }
-      .foot-cols div { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--gdg-muted); }
-      .foot-cols strong { color: var(--gdg-text); }
-      .foot-copy { max-width: 1080px; margin: 24px auto 0; font-size: 12px; }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 14px 28px;
+        background: rgba(8, 6, 15, 0.75);
+        backdrop-filter: blur(14px);
+        border-bottom: 1px solid var(--pr-border);
+      }
+      .brand {
+        font-size: 19px;
+        font-weight: 900;
+        letter-spacing: 0.06em;
+        color: var(--pr-text);
+        background: linear-gradient(92deg, var(--pr-pink), var(--pr-violet), var(--pr-cyan));
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .pulse {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--pr-lime);
+        box-shadow: 0 0 12px var(--pr-lime);
+        animation: blink 1.6s ease-in-out infinite;
+      }
+      @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.25; }
+      }
+      nav { display: flex; gap: 8px; align-items: center; }
+      nav a {
+        color: var(--pr-muted);
+        font-size: 14px;
+        font-weight: 700;
+        padding: 8px 16px;
+        border-radius: 999px;
+      }
+      nav a:hover { color: var(--pr-text); background: rgba(255, 255, 255, 0.06); }
+      nav a.on {
+        color: #0b0614;
+        background: linear-gradient(92deg, var(--pr-lime), var(--pr-cyan));
+      }
+      footer {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+        padding: 22px 24px;
+        margin-top: 60px;
+        border-top: 1px solid var(--pr-border);
+        color: var(--pr-muted);
+        font-size: 12px;
+        letter-spacing: 0.06em;
+      }
+      .sep { opacity: 0.5; }
     `,
   ],
 })
