@@ -20,6 +20,32 @@ module.exports = {
       { title: 'Prostor B', url: 'https://example.com/b', snippet: 'Centar grada', relevance: 0.7 },
     ],
   },
+  // Mock za ai/main.py POST /api/discover (AI pretraga interneta)
+  '/api/discover': (body) => ({
+    status: 'success',
+    query: body.prompt,
+    data: {
+      total_found: 2,
+      matches: [
+        {
+          title: 'Mock: Kongresna sala Sava Centar',
+          location_or_domain: 'Novi Beograd',
+          url: 'https://savacentar.rs/kongres/',
+          match_score: 92,
+          summary: 'Mock: veliki izbor sala, kapacitet od 50 do 4000 mesta.',
+          key_details: ['46 sala', 'Centralna lokacija'],
+        },
+        {
+          title: 'Mock: Event centar Beograd',
+          location_or_domain: 'Beograd',
+          url: 'https://example.com/event-centar',
+          match_score: 78,
+          summary: 'Mock: sala za 150 ljudi, cena na upit.',
+          key_details: ['150 mesta'],
+        },
+      ].slice(0, Number(body.top_k) || 3),
+    },
+  }),
   '/analyze-cv': {
     skills: ['Python', 'SQL'],
     inferred_skills: ['Git', 'REST API', 'timski rad'],

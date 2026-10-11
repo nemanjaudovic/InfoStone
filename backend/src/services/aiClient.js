@@ -56,6 +56,10 @@ module.exports = {
   interpretPrompt: (componentType, prompt, availableFields, schemaHint = '') =>
     post('/interpret-prompt', { component_type: componentType, prompt, available_fields: availableFields, schema_hint: schemaHint }),
   webSearch: (prompt, maxResults = 5) => post('/web-search', { prompt, max_results: maxResults }),
+  // AI pretraga interneta (ai/main.py: POST /api/discover -> ai/services/discovery_service.py)
+  // Gemma preformulise upit, Tavily pretrazi, Gemma izabere i rangira top_k rezultata
+  // -> { status, query, data: { total_found, matches: [{ title, location_or_domain, url, match_score, summary, key_details }] } }
+  discover: (prompt, topK = 3) => postForm('/api/discover', { prompt, top_k: String(topK) }),
 
   // Analiza CV-a
   analyzeCv: (filePath) => postFile('/analyze-cv', filePath),

@@ -6,8 +6,15 @@ const escapeHtml = (s = '') =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Prompt box pravila (guide §3.4): form NIKAD, ostali samo paid; search ga uvek ima (paid)
-const showPromptBox = (component, plan) =>
-  component.type !== 'form' && plan === 'paid' && (component.type === 'search' || component.promptEnabled);
+// PRIVREMENO (dogovor tima): search radi i za free plan, jer jos nema nacina da se postane paid.
+// Za povratak na guide §3.4 postaviti SEARCH_FREE_FOR_ALL = false.
+// Isto pravilo koristi i /api/prompt (routes/prompt.routes.js).
+const SEARCH_FREE_FOR_ALL = true;
+const showPromptBox = (component, plan) => {
+  if (component.type === 'form') return false;
+  if (component.type === 'search') return SEARCH_FREE_FOR_ALL || plan === 'paid';
+  return plan === 'paid' && component.promptEnabled;
+};
 
 // Gemma izlaz je nepouzdan: izbaci <script> i inline event handlere (onclick=...)
 const sanitizeStyledHtml = (html = '') =>
