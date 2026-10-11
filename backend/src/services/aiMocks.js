@@ -1,9 +1,11 @@
 // Lazni odgovori FastAPI-ja (oblik isti kao u docs/api-contract.md)
 module.exports = {
-  // Mock vraca isti HTML uz jednostavan <style>, kao da je Gemma spojila HTML i CSS
-  '/generate-css': (body) => ({
-    styled_html: `<style>/* mock */ .infostone-form { font-family: sans-serif; max-width: 480px; }</style>\n${body.component_html}`,
-    notes: 'mock',
+  // Mock za ai/main.py POST /api/customize-css: vraca isti HTML uz dodatu "klasu sajta"
+  '/api/customize-css': (body) => ({
+    status: 'success',
+    styled_html: body.form_html.replace('class="infostone-submit"', 'class="infostone-submit mock-site-button"'),
+    applied_classes: ['mock-site-button'],
+    error: null,
   }),
   '/interpret-prompt': {
     mongo_query: { 'data.city': 'Beograd' },

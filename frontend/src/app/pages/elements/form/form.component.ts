@@ -171,6 +171,9 @@ interface Question {
             <span class="badge">{{ result.styled ? 'Styled with your CSS' : 'Default style' }}</span>
           </div>
           <p class="muted">ID: <code>{{ result.id }}</code></p>
+          @if (result.notes) {
+            <p class="muted note">{{ result.notes }}</p>
+          }
 
           <label class="muted" for="embed-code">Embed code — paste it into your site</label>
           <div class="code-row">
@@ -430,6 +433,7 @@ interface Question {
       .badge { font-size: 12px; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 2px 10px; }
       .muted { margin: 0; color: var(--text-muted); font-size: 13px; }
       .muted code { color: var(--text); }
+      .note { color: #ffd479; }
       .code-row { display: flex; gap: 8px; }
       .code {
         flex: 1;
@@ -652,7 +656,8 @@ export class FormComponent {
         const uploaded = await firstValueFrom(this.cssApi.upload(css));
         const applied = await firstValueFrom(this.cssApi.apply(id, uploaded.cssSourceId));
         styled = true;
-        notes = applied.notes || '';
+        const classes = applied.appliedClasses?.length ? `Gemma applied: ${applied.appliedClasses.join(', ')}. ` : '';
+        notes = `${classes}${applied.notes || ''}`.trim();
       }
 
       const embedUrl = this.componentsApi.embedUrl(id);
