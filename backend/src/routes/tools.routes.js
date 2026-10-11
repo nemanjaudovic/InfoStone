@@ -1,11 +1,16 @@
 // /api/tools — AI alati za organizatora (dokument "AI ideje za dogadjaje", deo "Ideje za dogadjaje")
 // + dev alati: pregled tabela (kolekcija) i upitna konzola (phpMyAdmin stil)
+const path = require('path');
 const router = require('express').Router();
 const mongoose = require('mongoose');
+const multer = require('multer');
+const Component = require('../models/Component');
 const { requireAuth } = require('../middleware/auth');
 const { promptLimiter } = require('../middleware/rateLimit');
 const { asyncHandler, HttpError, notImplemented } = require('../utils/http');
 const { assertSafeQuery, assertSafePipeline } = require('../services/mongoWhitelist');
+const { getCollection } = require('../services/dynamicCollections');
+const aiClient = require('../services/aiClient');
 
 // ============================================================================
 // Dev alati: Tables + Query (Rute su PRE globalnog router.use,
@@ -100,10 +105,82 @@ router.post('/query', requireAuth, asyncHandler(async (req, res) => {
 }));
 
 // ============================================================================
+// Chatbot: znanje koje bot koristi (5. tip komponente, odgovori idu kroz /api/prompt/:id)
+// Znanje se cuva u kolekciji komponente ({owner}_chatbot_{n}) kao dokument _id: "knowledge";
+// u istoj kolekciji su i pitanja posetilaca (type: "chat"), vidi routes/prompt.routes.js.
+// ============================================================================
+
+const KNOWLEDGE_DOC_ID = 'knowledge';
+const KNOWLEDGE_EXT = ['.html', '.htm', '.md', '.txt'];
+const knowledgeUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (req, file, cb) =>
+    KNOWLEDGE_EXT.includes(path.extname(file.originalname).toLowerCase())
+      ? cb(null, true)
+      : cb(new Error(`Dozvoljeni su samo ${KNOWLEDGE_EXT.join(', ')} fajlovi`)),
+});
+
+// Multer greske (npr. fajl veci od 2MB, pogresan tip) kao 400 umesto 500
+function uploadKnowledgeFile(req, res, next) {
+  knowledgeUpload.single('file')(req, res, (err) => {
+    if (!err) return next();
+    next(new HttpError(400, err.code === 'LIMIT_FILE_SIZE' ? 'Fajl je veci od 2MB' : err.message));
+  });
+}
+
+async function loadOwnedChatbot(req) {
+  if (!mongoose.isValidObjectId(req.params.componentId)) throw new HttpError(404, 'Komponenta ne postoji');
+  const component = await Component.findOne({ _id: req.params.componentId, owner: req.user.username }).lean();
+  if (!component || component.type !== 'chatbot') throw new HttpError(404, 'Chatbot komponenta ne postoji');
+  return component;
+}
+
+// Sacuvano znanje (pregled u dashboard-u) -> { title, source, stats, warnings, chunks, builtAt } ili 404
+router.get('/chatbot/:componentId/knowledge', requireAuth, asyncHandler(async (req, res) => {
+  const component = await loadOwnedChatbot(req);
+  const doc = await getCollection(component.collectionName).findOne({ _id: KNOWLEDGE_DOC_ID });
+  if (!doc) throw new HttpError(404, 'Chatbot jos nema znanje');
+  const { _id, ...knowledge } = doc;
+  res.json(knowledge);
+}));
+
+// ============================================================================
 // AI alati (rate limitovani)
 // ============================================================================
 
 router.use(requireAuth, promptLimiter);
+
+// Pravljenje znanja za chatbot. Tacno jedan izvor:
+//   JSON { url }  -> AI servis cita sajt (do 10 stranica istog domena)
+//   JSON { text } -> nalepljen tekst / Markdown / HTML
+//   multipart "file" (.html, .htm, .md, .txt, do 2MB)
+// -> { title, source, stats, warnings, chunks, builtAt }  (staro znanje se zamenjuje)
+router.post('/chatbot/:componentId/knowledge', uploadKnowledgeFile, asyncHandler(async (req, res) => {
+  const component = await loadOwnedChatbot(req);
+  const url = typeof req.body.url === 'string' ? req.body.url.trim() : '';
+  const text = typeof req.body.text === 'string' ? req.body.text.trim() : '';
+  if ([req.file, url, text].filter(Boolean).length !== 1) {
+    throw new HttpError(400, 'Posalji tacno jedan izvor: url, text ili fajl (.html, .md, .txt)');
+  }
+  if (url && !/^https?:\/\//i.test(url)) throw new HttpError(400, 'URL mora pocinjati sa http:// ili https://');
+
+  let result;
+  try {
+    result = await aiClient.chatbotKnowledge({ url, text }, req.file || null);
+  } catch (err) {
+    // 400 iz AI servisa = problem sa izvorom (npr. stranica bez teksta), poruka ide korisniku
+    throw new HttpError(err.status === 400 ? 400 : 502, err.status === 400 ? err.message : `AI servis nije uspeo: ${err.message}`);
+  }
+  const knowledge = result && result.knowledge;
+  if (!knowledge || !Array.isArray(knowledge.chunks) || !knowledge.chunks.length) {
+    throw new HttpError(502, 'AI servis nije vratio znanje');
+  }
+
+  const doc = { ...knowledge, builtAt: new Date() };
+  await getCollection(component.collectionName).replaceOne({ _id: KNOWLEDGE_DOC_ID }, doc, { upsert: true });
+  res.status(201).json(doc);
+}));
 
 // Marketinski sadrzaj. Body: { notes, channels: ["linkedin","instagram","newsletter","session_description"] }
 router.post('/marketing', notImplemented('POST /api/tools/marketing'));
@@ -115,8 +192,7 @@ router.post('/feedback/:componentId', notImplemented('POST /api/tools/feedback/:
 // Preporuka agende i networking (NICE). Body: { sessions, interestsField }
 router.post('/agenda/:componentId', notImplemented('POST /api/tools/agenda/:componentId'));
 
-// Cet-bot za ucesnike (FAQ i logistika). Body: { faq, schedule, question }
-// Za sada test iz dashboard-a; embed kao 5. tip komponente je odluka za kasnije.
-router.post('/faq-chat', notImplemented('POST /api/tools/faq-chat'));
+// Cet-bot za ucesnike: uradjen kao 5. tip komponente ("chatbot") - znanje gore
+// (/chatbot/:componentId/knowledge), pitanja kroz javni /api/prompt/:componentId.
 
 module.exports = router;

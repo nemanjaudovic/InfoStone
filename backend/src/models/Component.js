@@ -3,7 +3,7 @@ const { Schema, model } = require('mongoose');
 
 const componentSchema = new Schema({
   owner: { type: String, required: true, index: true },
-  type: { type: String, enum: ['form', 'tableview', 'search', 'graph'], required: true },
+  type: { type: String, enum: ['form', 'tableview', 'search', 'graph', 'chatbot'], required: true },
   index: { type: Number, required: true },
   collectionName: { type: String, required: true, unique: true }, // {owner}_{type}_{index}
   title: { type: String, default: '' },

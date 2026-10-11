@@ -6,13 +6,14 @@ const escapeHtml = (s = '') =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Prompt box pravila (guide §3.4): form NIKAD, ostali samo paid; search ga uvek ima (paid)
-// PRIVREMENO (dogovor tima): search radi i za free plan, jer jos nema nacina da se postane paid.
-// Za povratak na guide §3.4 postaviti SEARCH_FREE_FOR_ALL = false.
+// PRIVREMENO (dogovor tima): search i chatbot rade i za free plan, jer jos nema nacina da se
+// postane paid. Za povratak na guide §3.4 postaviti SEARCH_FREE_FOR_ALL = false.
 // Isto pravilo koristi i /api/prompt (routes/prompt.routes.js).
 const SEARCH_FREE_FOR_ALL = true;
+const ALWAYS_PROMPT_TYPES = ['search', 'chatbot']; // polje za pitanje JE komponenta
 const showPromptBox = (component, plan) => {
   if (component.type === 'form') return false;
-  if (component.type === 'search') return SEARCH_FREE_FOR_ALL || plan === 'paid';
+  if (ALWAYS_PROMPT_TYPES.includes(component.type)) return SEARCH_FREE_FOR_ALL || plan === 'paid';
   return plan === 'paid' && component.promptEnabled;
 };
 

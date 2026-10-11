@@ -9,7 +9,7 @@ const { requireAuth } = require('../middleware/auth');
 const { asyncHandler, HttpError } = require('../utils/http');
 const { collectionName, nextIndex, getCollection } = require('../services/dynamicCollections');
 
-const TYPES = ['form', 'tableview', 'search', 'graph'];
+const TYPES = ['form', 'tableview', 'search', 'graph', 'chatbot'];
 const FIELD_TYPES = ['text', 'textarea', 'checkbox', 'radio', 'file'];
 const FIELD_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_]{0,40}$/;
 
@@ -95,8 +95,8 @@ router.post('/', asyncHandler(async (req, res) => {
 
   const owner = req.user.username;
   if (type === 'tableview') schema = await normalizeTableSchema(schema, owner);
-  // Prompt box pravila (guide §3.4): form nikad, search uvek
-  const promptEnabled = type === 'search' ? true : type === 'form' ? false : !!req.body.promptEnabled;
+  // Prompt box pravila (guide §3.4): form nikad, search i chatbot uvek (polje za pitanje je cela komponenta)
+  const promptEnabled = type === 'search' || type === 'chatbot' ? true : type === 'form' ? false : !!req.body.promptEnabled;
 
   let password = null;
   let passwordHash = null;
@@ -145,7 +145,7 @@ router.put('/:id', asyncHandler(async (req, res) => {
     component.markModified('schema');
     component.styledHtml = '';
   }
-  if (req.body.promptEnabled !== undefined && component.type !== 'form' && component.type !== 'search') {
+  if (req.body.promptEnabled !== undefined && !['form', 'search', 'chatbot'].includes(component.type)) {
     component.promptEnabled = !!req.body.promptEnabled;
   }
   if (req.body.sensitive !== undefined) {

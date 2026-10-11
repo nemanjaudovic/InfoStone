@@ -1,5 +1,5 @@
 // guide §5.2
-export type ComponentType = 'form' | 'tableview' | 'search' | 'graph';
+export type ComponentType = 'form' | 'tableview' | 'search' | 'graph' | 'chatbot';
 export type FormFieldType = 'text' | 'textarea' | 'checkbox' | 'radio' | 'file';
 
 export interface FormField {
@@ -27,6 +27,7 @@ export interface ComponentSchema {
   chartType?: 'pie' | 'bar' | 'line'; // graph
   groupBy?: string;                // graph
   maxResults?: number;             // search
+  greeting?: string;               // chatbot: prva poruka u chat prozoru
 }
 
 export interface InfoComponent {
