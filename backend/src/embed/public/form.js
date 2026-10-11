@@ -1,14 +1,24 @@
 // Ponasanje forme u iframe-u: validacija, slanje, poruka zahvalnosti.
 // HTML forme pravi server (templates/form.js ili Gemma spoj u styledHtml);
-// ova skripta se oslanja SAMO na klase infostone-* i name atribute.
+// ova skripta se oslanja na klase infostone-* i name atribute; ako ih Gemma
+// izmeni, koristi rezervne selektore (<form>, submit dugme) da forma i dalje radi.
 (function () {
   const { config, api, reportHeight } = window.InfoStone;
-  const form = document.querySelector('.infostone-form');
+  const form = document.querySelector('.infostone-form') || document.querySelector('form');
   if (!form) return;
 
   const fields = (config.schema && config.schema.fields) || [];
-  const submitBtn = form.querySelector('.infostone-submit');
-  const message = form.querySelector('.infostone-message');
+  const submitBtn =
+    form.querySelector('.infostone-submit') ||
+    form.querySelector('button[type="submit"], input[type="submit"]') ||
+    form.querySelector('button');
+  let message = form.querySelector('.infostone-message');
+  if (!message) {
+    message = document.createElement('p');
+    message.className = 'infostone-message';
+    message.hidden = true;
+    form.appendChild(message);
+  }
 
   const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB (guide §4.1)
   const ALLOWED_EXT = ['.pdf', '.docx', '.png', '.jpg', '.jpeg'];
@@ -18,7 +28,13 @@
   function fieldContainer(name) {
     const input = form.querySelector(`[name="${CSS.escape(name)}"]`);
     if (!input) return null;
-    return input.closest('.infostone-group') || input.closest('.infostone-label') || input.parentElement;
+    return (
+      input.closest('.infostone-question') ||
+      input.closest('[data-field]') ||
+      input.closest('.infostone-group') ||
+      input.closest('.infostone-label') ||
+      input.parentElement
+    );
   }
 
   function setError(name, text) {
@@ -111,7 +127,7 @@
     message.hidden = true;
     if (!validate()) return;
 
-    submitBtn.disabled = true;
+    if (submitBtn) submitBtn.disabled = true;
     try {
       // multipart: polja + fajlovi -> POST /api/submit/:componentId
       const result = await api(`/api/submit/${encodeURIComponent(config.id)}`, {
@@ -119,8 +135,11 @@
         body: new FormData(form),
       });
       const thanks = result.thankYouMessage || (config.schema && config.schema.thankYouMessage) || 'Hvala! Vasa prijava je poslata.';
-      form.querySelector('.infostone-fields').hidden = true;
-      submitBtn.hidden = true;
+      // Sakrij sve osim poruke (radi i kad Gemma promeni raspored)
+      const fieldsBox = form.querySelector('.infostone-fields');
+      if (fieldsBox) fieldsBox.hidden = true;
+      else Array.from(form.children).forEach((el) => { if (el !== message && !/^H[1-6]$/.test(el.tagName)) el.hidden = true; });
+      if (submitBtn) submitBtn.hidden = true;
       showMessage(thanks, false);
       // TODO (CV Coach, guide §4.5): ako result.coachToken postoji -> POST /api/cv/coach/:submissionId i prikazi savete
     } catch (err) {
@@ -128,7 +147,7 @@
       const fieldErrors = (err.data && err.data.fields) || {};
       Object.entries(fieldErrors).forEach(([name, text]) => setError(name, text));
       showMessage(`Slanje nije uspelo: ${err.message}`, true);
-      submitBtn.disabled = false;
+      if (submitBtn) submitBtn.disabled = false;
     }
   });
 })();

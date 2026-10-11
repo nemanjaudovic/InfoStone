@@ -17,10 +17,12 @@ Dodato: `PUT /api/components/:id` (za ekran `/components/:id/edit`; promena polj
 | Metoda | Ruta | Body | Odgovor |
 |---|---|---|---|
 | POST | `/api/css/upload` | multipart `css` | `{ cssSourceId }` |
-| POST | `/api/css/apply` | `{ componentId, cssSourceId }` | `{ styledHtml, notes }` |
+| POST | `/api/css/apply` | `{ componentId, cssSourceId }` | `{ styledHtml, notes, appliedClasses, usedFallback }` |
 
-`apply`: sirov HTML komponente (`embed/templates` → `rawMarkup`) + sirov CSS → Gemma → spoj se cuva u
-`component.styledHtml`. Gemma se zove **samo na klik**; iframe servira sacuvan rezultat.
+`apply`: sirov HTML komponente (`embed/templates` → `rawMarkup`) + sirov CSS → FastAPI `/api/customize-css` →
+Gemma doda klase sajta na HTML → cuva se `<style>CSS sajta</style>` + taj HTML u `component.styledHtml`
+(CSS mora uci u iframe jer je iframe izolovan). Ako Gemma izbaci `<form>` ili neko `name` polje, koristi se
+originalni HTML (+ CSS sajta) i `usedFallback: true`. Gemma se zove **samo na klik**; iframe servira sacuvan rezultat.
 
 ### Embed
 `GET /api/components/:id/embed` – javna HTML stranica za `<iframe>`; `demo-form` je ugradjena demo komponenta.
@@ -52,15 +54,16 @@ Blind mode uklanja ime, pol, sliku i fakultet.
 | POST | `/api/tools/faq-chat` | `{ faq, schedule, question }` | `{ answer }` |
 
 ## FastAPI (port 8000) – za AI kolegu
-Iz guide §7: `POST /generate-css` (izmenjen, vidi dole), `POST /interpret-prompt`, `POST /web-search`.
+Iz guide §7: CSS spoj (vidi dole, endpoint je `/api/customize-css`), `POST /interpret-prompt`, `POST /web-search`.
 
-`POST /generate-css` – spoj HTML-a komponente i CSS-a organizacije:
-```json
-ulaz:  { "component_html": "<form class=\"infostone-form\">...</form>", "raw_css": "..." }
-izlaz: { "styled_html": "<style>...</style><form class=\"infostone-form\">...</form>", "notes": "..." }
+`POST /api/customize-css` (implementirano u `ai/main.py`) – Gemma dodaje klase sajta na HTML komponente.
+Format: **form polja** (`application/x-www-form-urlencoded`), ne JSON:
 ```
-Pravila za Gemmu: menja samo izgled; zadrzava sve `infostone-*` klase, `name` atribute, polja i strukturu;
-bez `<script>`, bez `<html>/<head>/<body>`; CSS ide u `<style>` na pocetku fragmenta.
+ulaz:  form_html=<form class="infostone-form">...</form>&host_css=.site-input{...}
+izlaz: { "status": "success", "styled_html": "<div class='...'>...</div>", "applied_classes": ["..."], "error": null }
+```
+Na gresci parsiranja Gemma odgovora `error` je popunjen, a `styled_html` je originalni HTML.
+Zahtev za Gemmu: zadrzati `<form>`, sva `name` polja i `infostone-*` klase (na njih se oslanja `embed/public/form.js`).
 
 Novi (predlog, potvrditi sa AI kolegom):
 | Endpoint | Ulaz | Izlaz |
