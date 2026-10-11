@@ -7,6 +7,40 @@ const Component = require('../models/Component');
 const User = require('../models/User');
 const { asyncHandler } = require('../utils/http');
 const { renderPage } = require('./templates');
+const { getCollection } = require('../services/dynamicCollections');
+
+// Vrednost polja forme -> tekst za celiju
+const cellText = (v) => (Array.isArray(v) ? v.join(', ') : v === null || v === undefined ? '' : String(v));
+
+/**
+ * Tableview = sacuvan rezultat pretrage tabele: { sourceComponentId, rowIds, columns }.
+ * Redovi se citaju SVEZI iz kolekcije izvorne forme (redosled kao u rezultatu, obrisani nestaju).
+ */
+async function loadTableRows(component) {
+  const schema = component.schema || {};
+  component._columns = [];
+  component._rows = [];
+  if (!mongoose.isValidObjectId(schema.sourceComponentId)) return;
+  const source = await Component.findOne({ _id: schema.sourceComponentId, owner: component.owner, type: 'form' }).lean();
+  if (!source) return;
+
+  const fields = ((source.schema && source.schema.fields) || []).filter((f) => (schema.columns || []).includes(f.name));
+  const ids = (schema.rowIds || []).filter((id) => mongoose.isValidObjectId(id));
+  const docs = await getCollection(source.collectionName)
+    .find({ _id: { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) } })
+    .toArray();
+  const byId = new Map(docs.map((d) => [String(d._id), d]));
+
+  component._columns = fields.map((f) => f.label || f.name);
+  component._rows = ids
+    .filter((id) => byId.has(id))
+    .map((id) => {
+      const d = byId.get(id);
+      return fields.map((f) => (f.type === 'file'
+        ? (d.files || []).filter((x) => x.field === f.name).map((x) => x.filename).join(', ')
+        : cellText(d.data && d.data[f.name])));
+    });
+}
 
 // Demo komponenta: /api/components/demo-form/embed radi i pre nego sto CRUD proradi
 const DEMO = {
@@ -39,6 +73,7 @@ router.get('/:id/embed', asyncHandler(async (req, res) => {
     if (!component) return res.status(404).send('Not found');
     const owner = await User.findOne({ username: component.owner }).lean();
     plan = owner?.plan || 'free';
+    if (component.type === 'tableview' && !component.sensitive) await loadTableRows(component);
   }
 
   // Iframe mora moci da se ugradi na tudji sajt (NE koristiti helmet frameguard ovde)

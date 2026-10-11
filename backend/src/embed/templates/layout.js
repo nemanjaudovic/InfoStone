@@ -58,6 +58,30 @@ const BASE_FORM_CSS = `
 :where(.infostone-message-error) { background: #fce8e6; color: #c5221f; }
 `;
 
+// Osnovni izgled tabele; CSS sajta (ako je primenjen) uvek ima prednost
+const BASE_TABLE_CSS = `
+:where(body.infostone-type-tableview) { margin: 0; padding: 16px; background: #f1f3f4; color: #202124;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+:where(.infostone-tableview) { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+:where(.infostone-table-header) { background: #fff; color: #202124; border: 1px solid #dadce0; border-top: 8px solid #4285f4;
+  border-radius: 8px; padding: 18px 22px; }
+:where(.infostone-title) { margin: 0; font-size: 24px; font-weight: 600; }
+:where(.infostone-note) { margin: 6px 0 0; font-size: 13px; opacity: .7; }
+:where(.infostone-table-search) { box-sizing: border-box; width: 100%; max-width: 320px; padding: 9px 12px; font: inherit;
+  border: 1px solid #dadce0; border-radius: 6px; background: #fff; color: inherit; }
+:where(.infostone-table-wrap) { overflow: auto; border-radius: 8px; }
+:where(.infostone-table) { width: 100%; border-collapse: collapse; font-size: 14px; }
+:where(.infostone-th) { text-align: left; padding: 10px 14px; font-weight: 600; white-space: nowrap;
+  border-bottom: 1px solid #dadce0; cursor: pointer; user-select: none; }
+/* Bele povrsine samo kad CSS sajta NIJE primenjen; inace tabela preuzima boje sajta */
+:where(body:not(.infostone-styled)) :where(.infostone-table-wrap) { background: #fff; border: 1px solid #dadce0; }
+:where(body:not(.infostone-styled)) :where(.infostone-table) { color: #202124; }
+:where(body:not(.infostone-styled)) :where(.infostone-th) { background: #f8f9fa; }
+:where(.infostone-td) { padding: 9px 14px; border-bottom: 1px solid #eceff1; vertical-align: top; }
+:where(tbody .infostone-tr:hover) { background: rgba(66, 133, 244, .06); }
+:where(.infostone-empty) { margin: 0; padding: 16px; text-align: center; opacity: .7; }
+`;
+
 function layout(component, { plan, markup, script, extraHead = '' }) {
   // Config koji citaju skripte u /embed-assets (bez osetljivih polja!)
   const cfg = {
@@ -76,9 +100,10 @@ function layout(component, { plan, markup, script, extraHead = '' }) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(component.title)}</title>
   ${component.type === 'form' ? `<style>${BASE_FORM_CSS}</style>` : ''}
+  ${component.type === 'tableview' ? `<style>${BASE_TABLE_CSS}</style>` : ''}
   ${extraHead}
 </head>
-<body class="infostone-embed infostone-type-${component.type}">
+<body class="infostone-embed infostone-type-${component.type}${component.styledHtml ? ' infostone-styled' : ''}">
   ${markup}
   ${watermark}
   <style>

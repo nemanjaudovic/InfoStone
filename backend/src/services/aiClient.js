@@ -61,6 +61,16 @@ module.exports = {
   // -> { status, query, data: { total_found, matches: [{ title, location_or_domain, url, match_score, summary, key_details }] } }
   discover: (prompt, topK = 3) => postForm('/api/discover', { prompt, top_k: String(topK) }),
 
+  // Tabela + chatbox: Gemma ocenjuje svaki red prema promptu organizatora
+  // (ai/main.py: POST /api/screen-candidates-batch, Form polja)
+  // -> { status, total_screened, results: [ { ...red, evaluation: { match_score, meets_criteria, summary, key_highlights } } ] }
+  screenCandidates: (candidates, criteria, filesDirectory) =>
+    postForm('/api/screen-candidates-batch', {
+      candidates_json: JSON.stringify(candidates),
+      criteria,
+      files_directory: filesDirectory,
+    }),
+
   // Analiza CV-a
   analyzeCv: (filePath) => postFile('/analyze-cv', filePath),
   cvSearch: (query, candidates, topK = 5) => post('/cv-search', { query, candidates, top_k: topK }),
