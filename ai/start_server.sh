@@ -7,4 +7,4 @@ pip install python-multipart
 
 
 # 3. Run uvicorn pointing directly to python's module executor to avoid path mismatches
-python -m uvicorn ai.main:app --reload --port 8000
+python -m uvicorn ai.main:app --port 8000
