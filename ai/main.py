@@ -1,10 +1,12 @@
 import json
-from fastapi import FastAPI, Form, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from ai.services.css_matcher import match_form_css
 from ai.services.cv_screener import screen_candidate_batch
 from ai.services.discovery_service import run_discovery_service
+from ai.services.chatbot_service import ChatbotError, answer_question
+from ai.utils.site_extractor import ExtractError, build_knowledge
 
 # Initialize FastAPI App
 app = FastAPI(
@@ -31,7 +33,10 @@ async def root():
         "service": "InfoStone Event AI Microservices",
         "endpoints": [
             "/api/customize-css",
-            "/api/screen-candidates-batch"
+            "/api/screen-candidates-batch",
+            "/api/discover",
+            "/api/chatbot/knowledge",
+            "/api/chatbot/ask"
         ]
     }
 
@@ -103,5 +108,67 @@ async def discover_resources_endpoint(
             "query": prompt,
             "data": results
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ------------------------------------------------------------------
+# 4. Event Chatbot
+# ------------------------------------------------------------------
+# Plain `def` (not async): crawling and Gemma calls block, FastAPI runs these in a thread pool.
+MAX_KNOWLEDGE_UPLOAD = 2_000_000
+
+
+@app.post("/api/chatbot/knowledge")
+def chatbot_knowledge_endpoint(
+    url: str = Form(""),
+    text: str = Form(""),
+    file: UploadFile | None = File(None)
+):
+    """
+    Builds chatbot knowledge (small text chunks with heading + source url) from ONE of:
+    a website url (crawls up to 10 pages of the same site), pasted text/Markdown/HTML,
+    or an uploaded .html/.md/.txt file. Store the result and send it back with /ask.
+    """
+    try:
+        if file is not None and file.filename:
+            raw = file.file.read(MAX_KNOWLEDGE_UPLOAD + 1)
+            if len(raw) > MAX_KNOWLEDGE_UPLOAD:
+                raise HTTPException(status_code=400, detail="File is larger than 2MB.")
+            knowledge = build_knowledge(text=raw.decode("utf-8", errors="replace"), source_name=file.filename)
+        else:
+            knowledge = build_knowledge(url=url or None, text=text or None)
+        return {"status": "success", "knowledge": knowledge}
+    except ExtractError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/chatbot/ask")
+def chatbot_ask_endpoint(
+    question: str = Form(...),
+    knowledge_json: str = Form(...),
+    history_json: str = Form("[]")
+):
+    """
+    Answers a visitor's question from the knowledge built by /api/chatbot/knowledge.
+    history_json: optional [{question, answer}] of the last turns (for follow-up questions).
+    Uses Gemma when GEMMA_BASE_URL is set, otherwise (or if Gemma fails) an extractive "dummy" answer.
+    """
+    try:
+        knowledge = json.loads(knowledge_json)
+        history = json.loads(history_json or "[]")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON in knowledge_json or history_json.")
+    if not isinstance(knowledge, dict) or not isinstance(history, list):
+        raise HTTPException(status_code=400, detail="knowledge_json must be an object, history_json a list.")
+
+    try:
+        result = answer_question(question, knowledge, history)
+        return {"status": "success", **result}
+    except ChatbotError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
