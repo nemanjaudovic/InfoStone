@@ -65,6 +65,31 @@ export interface FeedbackReport {
   highlights: string[];
 }
 
-export interface FaqAnswer {
+// --- Chatbot (5. tip komponente) ---
+// Znanje koje AI servis napravi od sajta/teksta organizatora (/api/tools/chatbot/:id/knowledge)
+export interface ChatbotChunk {
+  id: number;
+  heading: string;
+  url: string;
+  text: string;
+}
+
+export interface ChatbotKnowledge {
+  title: string;
+  description?: string;
+  source: string;
+  chunks: ChatbotChunk[];
+  stats: { pages: number; chunks: number; chars: number };
+  warnings: string[];
+  builtAt: string;
+}
+
+// Izvor znanja: tacno jedno od ovoga
+export type ChatbotSource = { url: string } | { text: string } | { file: File };
+
+// Odgovor bota (iframe -> /api/prompt/:id)
+export interface ChatbotAnswer {
   answer: string;
+  sources: { id: number; heading: string; url: string }[];
+  mode: 'gemma' | 'dummy';
 }

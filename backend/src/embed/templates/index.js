@@ -6,6 +6,7 @@ const templates = {
   tableview: require('./tableview'),
   search: require('./search'),
   graph: require('./graph'),
+  chatbot: require('./chatbot'),
   locked: require('./locked'),
 };
 

@@ -9,6 +9,7 @@ const { promptLimiter } = require('../middleware/rateLimit');
 const { asyncHandler, HttpError } = require('../utils/http');
 const { showPromptBox } = require('../embed/templates/layout');
 const aiClient = require('../services/aiClient');
+const { getCollection } = require('../services/dynamicCollections');
 
 const MAX_PROMPT_LEN = 500; // guide §7.2/§7.3
 const DEFAULT_TOP_K = 3;
@@ -53,10 +54,50 @@ async function runSearch(component, prompt) {
   return { summary, results };
 }
 
-// Body: { prompt }
+// chatbot -> odgovor iz znanja sacuvanog u kolekciji komponente (routes/tools.routes.js)
+// -> { answer, sources: [{ id, heading, url }], mode: 'gemma' | 'dummy' }
+const MAX_HISTORY = 3;
+
+function cleanHistory(history) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .slice(-MAX_HISTORY)
+    .filter((t) => t && typeof t.question === 'string')
+    .map((t) => ({ question: t.question.slice(0, 300), answer: String(t.answer || '').slice(0, 300) }));
+}
+
+async function runChatbot(component, prompt, history) {
+  const coll = getCollection(component.collectionName);
+  const knowledge = await coll.findOne({ _id: 'knowledge' });
+  if (!knowledge) throw new HttpError(409, 'Chatbot jos nema znanje - organizator treba da ga napravi u dashboard-u');
+
+  let result;
+  try {
+    const { _id, ...data } = knowledge;
+    result = await aiClient.chatbotAsk(prompt, data, cleanHistory(history));
+  } catch (err) {
+    throw new HttpError(502, `AI servis nije uspeo: ${err.message}`);
+  }
+  const answer = {
+    answer: String(result?.answer || ''),
+    sources: Array.isArray(result?.sources)
+      ? result.sources.map((s) => ({ id: s.id, heading: String(s.heading || ''), url: String(s.url || '') }))
+      : [],
+    mode: result?.mode === 'gemma' ? 'gemma' : 'dummy',
+  };
+
+  // Pitanja posetilaca (organizator ih vidi u Tables) - greska ovde ne sme da obori odgovor
+  coll.insertOne({ type: 'chat', question: prompt, ...answer, askedAt: new Date() })
+    .catch((err) => console.error('chatbot log:', err.message));
+
+  return answer;
+}
+
+// Body: { prompt, history? }   (history samo za chatbot: [{ question, answer }])
 //  - form                         -> 403 (forma NIKAD nema prompt box)
 //  - prompt box nije dozvoljen    -> 403 (pravilo iz embed/templates/layout.js showPromptBox)
 //  - search                       -> aiClient.discover -> { summary, results } + SearchHistory
+//  - chatbot                      -> aiClient.chatbotAsk -> { answer, sources, mode } + log u kolekciji
 //  - tableview/graph              -> TODO: aiClient.interpretPrompt -> mongoWhitelist.assertSafe -> upit nad kolekcijom
 router.post('/:componentId', promptLimiter, asyncHandler(async (req, res) => {
   const { componentId } = req.params;
@@ -78,6 +119,7 @@ router.post('/:componentId', promptLimiter, asyncHandler(async (req, res) => {
   }
 
   if (component.type === 'search') return res.json(await runSearch(component, prompt));
+  if (component.type === 'chatbot') return res.json(await runChatbot(component, prompt, req.body.history));
 
   res.status(501).json({ error: 'Not implemented', route: `POST /api/prompt/:componentId (${component.type})` });
 }));
