@@ -53,13 +53,16 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
               </svg>
               <span class="label">Table</span>
             </a>
-            <a routerLink="/welcome/elements/graph" routerLinkActive="active" title="Graph">
+            <a routerLink="/welcome/elements/chatbot" routerLinkActive="active" title="Chatbot">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="20" x2="18" y2="10"></line>
-                <line x1="12" y1="20" x2="12" y2="4"></line>
-                <line x1="6" y1="20" x2="6" y2="14"></line>
+                <rect x="4" y="7" width="16" height="12" rx="3"></rect>
+                <path d="M12 7V4"></path>
+                <circle cx="12" cy="4" r="1" fill="currentColor" stroke="none"></circle>
+                <circle cx="9" cy="13" r="1.2" fill="currentColor" stroke="none"></circle>
+                <circle cx="15" cy="13" r="1.2" fill="currentColor" stroke="none"></circle>
+                <path d="M9 16h6"></path>
               </svg>
-              <span class="label">Graph</span>
+              <span class="label">Chatbot</span>
             </a>
             <a routerLink="/welcome/elements/search" routerLinkActive="active" title="Search">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

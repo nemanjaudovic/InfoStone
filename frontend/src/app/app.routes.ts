@@ -17,7 +17,7 @@ export const routes: Routes = [
       // Elements
       { path: 'elements/form', loadComponent: () => import('./pages/elements/form/form.component').then((m) => m.FormComponent) },
       { path: 'elements/table', loadComponent: () => import('./pages/elements/table/table.component').then((m) => m.TableComponent) },
-      { path: 'elements/graph', loadComponent: () => import('./pages/elements/graph/graph.component').then((m) => m.GraphComponent) },
+      { path: 'elements/chatbot', loadComponent: () => import('./pages/elements/chatbot/chatbot.component').then((m) => m.ChatbotComponent) },
       { path: 'elements/search', loadComponent: () => import('./pages/elements/search/search.component').then((m) => m.SearchComponent) },
       // Developer Tools
       { path: 'tools/query', loadComponent: () => import('./pages/tools/query/query.component').then((m) => m.QueryComponent) },

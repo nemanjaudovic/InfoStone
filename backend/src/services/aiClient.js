@@ -9,8 +9,8 @@ const mocks = require('./aiMocks');
 // Mock moze biti objekat ili funkcija koja dobija body zahteva
 const mock = (endpoint, body) => (typeof mocks[endpoint] === 'function' ? mocks[endpoint](body) : mocks[endpoint]);
 
-// Gemma (Kaggle tunel) zna da bude spora -> 2 min pa odustajemo
-const AI_TIMEOUT_MS = 120000;
+// Gemma (Kaggle tunel) zna da bude spora -> 5 min pa odustajemo
+const AI_TIMEOUT_MS = 300000;
 
 async function post(endpoint, body) {
   if (config.mockAi) return mock(endpoint, body);

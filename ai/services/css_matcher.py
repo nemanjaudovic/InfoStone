@@ -1,31 +1,87 @@
 import json
+from html.parser import HTMLParser
+
 from ai.utils.gemma_client import call_kaggle_gemma
 
 CSS_MATCHER_SYSTEM_PROMPT = """
-You are an expert frontend developer and UI/UX AI assistant.
-Your task is to integrate an unstyled form structure into an external website based on full-page CSS.
+You are an HTML editor that integrates an unstyled form into a host website's design system.
 
-RULES:
-1. You will receive an unstyled HTML snippet and the raw CSS from the host website's entire page.
-2. The host CSS will contain many irrelevant rules for other parts of the page. IGNORE all rules that do not apply to form elements (inputs, buttons, labels, containers, typography).
-3. Do not inject or modify IDs (#id). Use ONLY class names (.class) because IDs must be globally unique.
-4. Extract only the necessary CSS rules and place them inside a <style> block.
-5. Inject the corresponding class names into the HTML tags.
-6. Return ONLY a valid JSON object with no markdown code blocks around it, matching this exact structure:
+YOUR ONLY ALLOWED EDIT: add one or more existing class names (taken EXCLUSIVELY from the HOST CSS below)
+into the class attributes of the given HTML elements. You are NOT designing a new form.
+
+STRICT RULES:
+1. The output HTML MUST be the input HTML, byte for byte, with ONLY these changes:
+   - extra class names appended to EXISTING class attributes (keep all existing classes, e.g. infostone-*),
+   - or a class="..." attribute added to an element that had none.
+2. DO NOT create, remove, reorder, or wrap any element. DO NOT change any tag.
+3. DO NOT change, add, or remove ANY other attribute: keep name="...", type="...", required, for="...",
+   placeholder, accept and all infostone-* classes EXACTLY as they are.
+4. DO NOT change any text content, labels, or option values.
+5. DO NOT add <style>, <script>, inline style="..." attributes, or new HTML.
+6. Use ONLY class names that literally exist in the HOST CSS. NEVER invent classes and NEVER use classes
+   from other design systems (for example, never use Google Forms classes unless they exist in the HOST CSS).
+7. If the host CSS has no fitting class for an element, leave that element untouched.
+8. Return ONLY a valid JSON object, no markdown, no explanations, exactly in this structure:
 {
-  "styled_html": "<style>/* relevant extracted css rules */</style>\\n<form class='...'>...</form>",
-  "applied_classes": ["list", "of", "classes", "used"]
+  "styled_html": "<the input HTML with only classes added>",
+  "applied_classes": ["classes", "actually", "used"]
 }
 """
 
+# Atributi koji odreduju ponasanje forme — moraju ostati identicni
+_KEY_ATTRS = ('name', 'type', 'required', 'for', 'accept', 'placeholder')
+
+
+class SkeletonParser(HTMLParser):
+    """Poredi STRUKTURU dva HTML-a: tagove, redosled, kljucne atribute i tekst.
+
+    Klase se namerno ignorisu — Gemma sme samo da doda klase,
+    pa struktura bez klasa mora ostati identicna.
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.out = []
+
+    def handle_starttag(self, tag, attrs):
+        keep = sorted((k, v) for k, v in attrs if k in _KEY_ATTRS)
+        self.out.append(('open', tag, keep))
+
+    def handle_startendtag(self, tag, attrs):
+        # <input ... /> i <input ...> se tretiraju isto
+        keep = sorted((k, v) for k, v in attrs if k in _KEY_ATTRS)
+        self.out.append(('open', tag, keep))
+
+    def handle_endtag(self, tag):
+        self.out.append(('close', tag))
+
+    def handle_data(self, data):
+        text = ' '.join(data.split())
+        if text:
+            self.out.append(('text', text))
+
+
+def skeleton(html: str) -> list:
+    p = SkeletonParser()
+    p.feed(html)
+    return p.out
+
+
+def same_structure(a: str, b: str) -> bool:
+    return skeleton(a) == skeleton(b)
+
 
 def match_form_css(form_html: str, host_css: str) -> dict:
-    """Analyzes host CSS and injects matching classes into the unstyled form HTML."""
+    """Trazi od Gemme da doda klase sajta na HTML forme, ali strukturu garantuje kod.
+
+    Ako Gemma ista promeni (novi elementi, izbrisana polja, promenjen tekst...),
+    vracamo ORIGINALNI HTML — halucinacija nikad ne stize do korisnika.
+    """
     user_payload = f"""
     HOST WEBSITE CSS:
     {host_css}
 
-    UNSTYLED FORM HTML:
+    UNSTYLED FORM HTML (do not rewrite it, only add classes):
     {form_html}
     """
 
@@ -42,7 +98,19 @@ def match_form_css(form_html: str, host_css: str) -> dict:
         if json_start != -1 and json_end != 0:
             clean_json = clean_json[json_start:json_end]
 
-        return json.loads(clean_json)
+        data = json.loads(clean_json)
+        styled = data.get("styled_html") or ""
+
+        # Kljucna zastita: struktura (bez klasa) mora ostati ista.
+        # Time se hvata i "Google Forms" prepisivanje koje je Gemma znala da uradi.
+        if not styled or not same_structure(form_html, styled):
+            return {
+                "styled_html": form_html,
+                "applied_classes": [],
+                "error": "Gemma je promenila strukturu forme — vracen je originalni HTML (samo CSS sajta se primenjuje).",
+            }
+
+        return data
     except json.JSONDecodeError:
         return {
             "styled_html": form_html,  # Fallback to unstyled if parsing fails

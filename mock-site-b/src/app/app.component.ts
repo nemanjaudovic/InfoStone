@@ -12,6 +12,6 @@ import { RouterLink, RouterOutlet } from '@angular/router';
     </header>
     <router-outlet />
   `,
-  styles: [`header { display: flex; gap: 1rem; padding: 1rem; }`],
+  styles: [`header { display: flex; align-items: baseline; justify-content: center; gap: 28px; padding: 20px 24px 14px; }`],
 })
 export class AppComponent {}
